@@ -1,0 +1,735 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>buddy</title>
+<style>
+  html, body { margin:0; padding:0; background:transparent; overflow:hidden;
+               -webkit-user-select:none; user-select:none; cursor:default; }
+  #stage { position:relative; width:420px; height:320px; }
+  canvas { position:absolute; inset:0; width:420px; height:320px; image-rendering:pixelated; }
+  #bubble {
+    position:absolute; left:50%; transform:translateX(-50%);
+    max-width:240px; padding:5px 9px; border-radius:9px;
+    background:#fffdf7; color:#2b1a14; border:2px solid #2b1a14;
+    font:12px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace;
+    text-align:center; pointer-events:none; opacity:0;
+    transition:opacity .16s ease; white-space:pre-wrap;
+    box-shadow:2px 2px 0 rgba(43,26,20,.22);
+  }
+  #bubble.on { opacity:1; }
+  #talk {
+    position:absolute; left:50%; transform:translateX(-50%);
+    display:none; align-items:center; gap:6px;
+    background:#fffdf7; border:2px solid #2b1a14; border-radius:9px;
+    padding:4px 8px; box-shadow:2px 2px 0 rgba(43,26,20,.22);
+  }
+  #talk.on { display:flex; }
+  #talk .caret { color:#c4785a; font:12px ui-monospace, Menlo, monospace; }
+  #talk input {
+    border:0; outline:0; background:transparent; width:190px; color:#2b1a14;
+    font:12px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  #talk:after {
+    content:""; position:absolute; left:50%; bottom:-7px; margin-left:-5px;
+    border:5px solid transparent; border-top-color:#2b1a14; border-bottom:0;
+  }
+  #bubble:after {
+    content:""; position:absolute; left:50%; bottom:-7px; margin-left:-5px;
+    border:5px solid transparent; border-top-color:#2b1a14; border-bottom:0;
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="c"></canvas>
+  <div id="bubble"></div>
+  <div id="talk"><span class="caret">&gt;</span><input id="talkInput" spellcheck="false"
+       autocomplete="off" placeholder="say something"></div>
+</div>
+<script src="common.js"></script>
+<script>
+const WIN_W = 420, WIN_H = 320, CX = 210, BASE_Y = 268;
+const cv = document.getElementById("c");
+const ctx = cv.getContext("2d");
+const bubbleEl = document.getElementById("bubble");
+const talkEl = document.getElementById("talk");
+const talkInput = document.getElementById("talkInput");
+
+let state = window.CB.mergeState(null);
+let anims = window.CB.animationsOf(state);
+let palette = window.CB.paletteFor(state.look.colors);
+
+let screenRect = { x: 0, y: 0, w: 1440, h: 860 };
+let mouse = { x: 0, y: 0, ok: false };
+
+const pet = {
+  x: 300, y: 700, vx: 0, vy: 0, facing: 1,
+  action: "idle", frame: 0, frameT: 0, actionT: 0, hold: 2,
+  target: null, dragging: false, grabDX: 0, grabDY: 0,
+  lastInteraction: Date.now() / 1000, asleep: false
+};
+
+/* the ball, and short-lived things like dust and hearts */
+let ball = null;
+let effects = [];
+let play = { until: 0, keepies: 0, sinceRest: 0 };
+
+let winX = -9999, winY = -9999, hovering = false, ignoring = true;
+let bubbleBottom = -1;
+
+/* ---------- native bridge ---------- */
+function send(type, payload) {
+  try { window.webkit.messageHandlers.buddy.postMessage(Object.assign({ type: type, view: "pet" }, payload || {})); }
+  catch (e) {}
+}
+
+window.__onNative = function (msg) {
+  if (!msg || !msg.type) return;
+  if (msg.type === "state") applyState(msg.state);
+  else if (msg.type === "screen") {
+    screenRect = msg.rect;
+    if (pet.y < screenRect.y || pet.y > screenRect.y + screenRect.h) pet.y = ground();
+    clampX();
+  }
+  else if (msg.type === "mouse") { mouse.x = msg.x; mouse.y = msg.y; mouse.ok = true; }
+  else if (msg.type === "command") command(msg.cmd, msg);
+  else if (msg.type === "context") onContext(msg);
+  else if (msg.type === "modelReply") onModelReply(msg);
+};
+
+function applyState(raw) {
+  state = window.CB.mergeState(raw);
+  anims = window.CB.animationsOf(state);
+  palette = window.CB.paletteFor(state.look.colors);
+  if (!anims[pet.action]) setAction("idle");
+  clampX();
+}
+
+/* ---------- geometry ---------- */
+const scale = () => Math.max(1, Math.min(8, Math.round(state.look.scale || 4)));
+const spriteW = () => window.CB.GRID * scale();
+const ground = () => screenRect.y + screenRect.h - 2;
+const minX = () => screenRect.x + (state.behavior.edgeMargin || 24);
+const maxX = () => screenRect.x + screenRect.w - (state.behavior.edgeMargin || 24);
+function clampX() { pet.x = Math.max(minX(), Math.min(maxX(), pet.x)); }
+const toWinX = sx => CX + (sx - pet.x);
+const toWinY = sy => BASE_Y + (sy - pet.y);
+
+/* ---------- actions ---------- */
+function setAction(name, holdSeconds) {
+  if (!anims[name]) name = "idle";
+  if (pet.action !== name) { pet.frame = 0; pet.frameT = 0; }
+  pet.action = name;
+  pet.actionT = 0;
+  pet.hold = holdSeconds == null ? 2.5 : holdSeconds;
+  pet.asleep = (name === "sleep");
+}
+
+function say(text, seconds) {
+  if (!text) return;
+  bubbleEl.textContent = text;
+  bubbleEl.classList.add("on");
+  clearTimeout(say._t);
+  say._t = setTimeout(() => bubbleEl.classList.remove("on"), (seconds || 2.8) * 1000);
+}
+function randomPhrase() {
+  const p = state.behavior.phrases || [];
+  return p.length ? p[(Math.random() * p.length) | 0] : null;
+}
+function walkTo(x, run) {
+  pet.target = Math.max(minX(), Math.min(maxX(), x));
+  setAction(run ? "run" : "walk", 12);
+}
+
+/* ---------- effects ---------- */
+function puff(x, y, count) {
+  for (let i = 0; i < (count || 2); i++) {
+    effects.push({ name: "puff", x: x + (Math.random() * 26 - 13), y: y - 4, vy: -14 - Math.random() * 14,
+                   vx: (Math.random() * 2 - 1) * 22, life: 0.55, t: 0, scale: Math.max(1, scale() - 2) });
+  }
+}
+function heart(x, y) {
+  effects.push({ name: "heart", x: x, y: y, vy: -26, vx: 0, life: 1.3, t: 0, scale: Math.max(2, scale() - 1) });
+}
+function updateEffects(dt) {
+  for (const e of effects) { e.t += dt; e.x += e.vx * dt; e.y += e.vy * dt; e.vy *= 0.96; }
+  effects = effects.filter(e => e.t < e.life);
+}
+
+/* ---------- the ball ---------- */
+/* about as big across as one of his legs is long */
+const ballR = () => Math.max(4, scale() * 1.7);
+
+function takeOutBall() {
+  if (ball) return;
+  ball = { x: pet.x + pet.facing * 26, y: ground() - ballR(), vx: 0, vy: -120, angle: 0, alpha: 0, out: false };
+  play.keepies = 0;
+  play.sinceRest = 0;
+}
+function putAwayBall() { if (ball) ball.out = true; }
+
+function updateBall(dt) {
+  if (!ball) return;
+  ball.alpha = ball.out ? Math.max(0, ball.alpha - dt * 2.2) : Math.min(1, ball.alpha + dt * 3.5);
+  if (ball.out && ball.alpha <= 0) { ball = null; return; }
+
+  const g = ground(), r = ballR();
+  ball.vy += (state.behavior.gravity || 1400) * 0.8 * dt;
+  ball.x += ball.vx * dt;
+  ball.y += ball.vy * dt;
+  ball.angle += (ball.vx * dt) / ballR();   /* it rolls rather than spins on the spot */
+
+  if (ball.y + r >= g) {
+    ball.y = g - r;
+    if (Math.abs(ball.vy) > 40) { ball.vy = -ball.vy * 0.62; play.sinceRest = 0; }
+    else { ball.vy = 0; ball.vx *= 0.90; }
+    if (Math.abs(ball.vy) < 8 && Math.abs(ball.vx) < 6) { ball.vx = 0; play.keepies = 0; }
+  } else {
+    ball.vx *= 0.995;
+  }
+
+  /* he keeps it close — the window is only so wide */
+  const tether = 170;
+  if (ball.x < pet.x - tether) { ball.x = pet.x - tether; ball.vx = Math.abs(ball.vx) * 0.7; }
+  if (ball.x > pet.x + tether) { ball.x = pet.x + tether; ball.vx = -Math.abs(ball.vx) * 0.7; }
+  if (ball.x < minX()) { ball.x = minX(); ball.vx = Math.abs(ball.vx) * 0.7; }
+  if (ball.x > maxX()) { ball.x = maxX(); ball.vx = -Math.abs(ball.vx) * 0.7; }
+}
+
+function tryKick(dt) {
+  if (!ball || ball.out || pet.dragging) return;
+  const near = Math.abs(ball.x - pet.x) < 20 + scale() * 2;
+  const low = ball.y > ground() - 26 - scale() * 3;
+  if (!near || !low) return;
+  if (pet.action === "kick" && pet.actionT < 0.35) return;
+  const away = Math.sign(ball.x - pet.x) || pet.facing;
+  pet.facing = away;
+  ball.vx = away * (60 + Math.random() * 110);
+  ball.vy = -(180 + Math.random() * 200);
+  play.sinceRest += 1;
+  play.keepies += 1;
+  setAction("kick", 0.45);
+  pet.target = null;
+  if (play.keepies > (state.stats.bestKeepies || 0)) {
+    state.stats.bestKeepies = play.keepies;
+    if (play.keepies % 5 === 0) send("saveState", { state: state });
+  }
+  if (play.keepies === 5) say("five!");
+  else if (play.keepies > 5 && play.keepies % 10 === 0) say(play.keepies + " in a row");
+}
+
+function startPlaying(seconds) {
+  if (!state.behavior.playBall) return;
+  takeOutBall();
+  play.until = Date.now() / 1000 + (seconds || 20);
+  setAction("walk", 12);
+  if (Math.random() < 0.5) say("watch this");
+}
+const isPlaying = () => ball && !ball.out && Date.now() / 1000 < play.until;
+
+/* ---------- deciding what to do ---------- */
+function nightHour() {
+  const h = new Date().getHours();
+  return h >= 23 || h < 6;
+}
+function sleepDelay() {
+  const base = state.behavior.sleepAfter;
+  if (!base) return 0;
+  return (state.behavior.nightMode && nightHour()) ? Math.max(15, base * 0.4) : base;
+}
+
+function decide() {
+  const b = state.behavior;
+  const now = Date.now() / 1000;
+  const nap = sleepDelay();
+
+  if (nap > 0 && now - pet.lastInteraction > nap) { putAwayBall(); setAction("sleep", 9999); return; }
+
+  if (isPlaying()) { walkTo(ball.x - pet.facing * 6, Math.abs(ball.x - pet.x) > 120); return; }
+  if (ball && !ball.out && now >= play.until) {
+    putAwayBall();
+    if (play.keepies > 2) say(play.keepies + " keepie-uppies");
+    return;
+  }
+
+  if (b.followCursor && mouse.ok && Math.abs(mouse.x - pet.x) > 90) {
+    walkTo(mouse.x + (Math.random() * 60 - 30), Math.abs(mouse.x - pet.x) > 420);
+    return;
+  }
+
+  /* over half the time he simply gets on with whatever you are getting on with */
+  const act = aware.activity;
+  if (act && Math.random() < 0.55) {
+    if (act.do === "ball") { if (b.playBall) { startPlaying(14 + Math.random() * 14); return; } }
+    else if (anims[act.do]) { setAction(act.do, 3 + Math.random() * 4); return; }
+  }
+
+  const r = Math.random();
+  const energy = Math.max(0, Math.min(1, b.energy == null ? 0.5 : b.energy));
+  if (b.playBall && r < 0.14 + energy * 0.1) { startPlaying(14 + Math.random() * 16); return; }
+  if (r < 0.5 + energy * 0.1) {
+    const span = screenRect.w * (0.15 + energy * 0.5);
+    walkTo(pet.x + (Math.random() * 2 - 1) * span, false);
+  } else if (r < 0.6 + energy * 0.12) {
+    walkTo(pet.x + (Math.random() < 0.5 ? -1 : 1) * screenRect.w * 0.4, true);
+  } else if (r < 0.92) {
+    const pool = (state.rotation || []).filter(k => anims[k]);
+    const pick = pool.length ? pool[(Math.random() * pool.length) | 0] : "idle";
+    setAction(pick, 2 + Math.random() * 3);
+    if (Math.random() < 0.4) say(randomPhrase());
+  } else {
+    setAction("idle", 1.5 + Math.random() * 4);
+  }
+}
+
+function command(cmd, msg) {
+  pet.lastInteraction = Date.now() / 1000;
+  if (cmd === "play" && anims[msg.anim]) setAction(msg.anim, msg.seconds || 4);
+  else if (cmd === "ball") startPlaying(msg.seconds || 25);
+  else if (cmd === "come") { if (mouse.ok) walkTo(mouse.x, true); }
+  else if (cmd === "sleep") { putAwayBall(); setAction("sleep", 9999); }
+  else if (cmd === "wake") { setAction("idle", 1); say("morning"); }
+  else if (cmd === "say") say(msg.text || "hi", 3.4);
+  else if (cmd === "flip") setAction("flip", 0.6);
+  else if (cmd === "center") { pet.x = screenRect.x + screenRect.w / 2; pet.y = ground(); setAction("land", 0.4); }
+  else if (cmd === "jump") { pet.vy = -520; pet.y -= 1; setAction("fall", 4); }
+}
+
+/* ---------- a local model, when one is switched on ---------- */
+const aware = { lastApp: null, lastTitle: "", lastAsk: 0, pending: null, wasIdle: false,
+                seq: 0, activity: null, context: null, seenOnce: false };
+
+/* What you are doing, as he understands it: the first reaction whose pattern
+   matches "<app> <window title>". This needs no model and no permission beyond the
+   app name, and it is what actually ties him to your screen — the model only
+   supplies the words on top. */
+function matchReaction(app, title) {
+  const hay = ((app || "") + " " + (title || "")).toLowerCase();
+  for (const r of (state.reactions || [])) {
+    if (!r || !r.match) continue;
+    let re;
+    try { re = new RegExp(r.match, "i"); } catch (e) { continue; }
+    if (re.test(hay)) return r;
+  }
+  return null;
+}
+
+function onContext(ctx0) {
+  const a = state.awareness || {};
+  const now = Date.now() / 1000;
+  const appChanged = ctx0.app && ctx0.app !== aware.lastApp;
+  const titleChanged = (ctx0.title || "") !== aware.lastTitle;
+
+  const hit = matchReaction(ctx0.app, a.seeTitle ? ctx0.title : "");
+  aware.activity = hit;
+  aware.context = ctx0;
+
+  const cameBack = aware.wasIdle && ctx0.idle < 5;
+  aware.wasIdle = ctx0.idle > 240;
+  aware.lastApp = ctx0.app;
+  aware.lastTitle = ctx0.title || "";
+
+  if (pet.dragging || talk.open) return;
+  if (pet.asleep) { if (cameBack) { pet.lastInteraction = now; setAction("idle", 1.5); } return; }
+
+  /* he changes what he is doing as soon as you change what you are doing */
+  if ((appChanged || titleChanged) && hit && !isPlaying()) {
+    pet.lastInteraction = now;
+    if (hit.do === "ball") startPlaying(18);
+    else if (anims[hit.do]) setAction(hit.do, 3 + Math.random() * 3);
+    if (hit.say && Math.random() < 0.5) say(hit.say);
+  }
+
+  if (!a.enabled || !a.model) return;
+  let reason = null;
+  if (a.seeApp && appChanged) {
+    reason = aware.seenOnce ? ("they just switched to " + ctx0.app) : ("they are working in " + ctx0.app);
+    if (a.seeTitle && ctx0.title) reason += ', the window is called "' + ctx0.title + '"';
+  }
+  if (a.seeIdle && cameBack) reason = "they have just come back to the keyboard";
+  aware.seenOnce = true;
+  if (!reason) return;
+  if (now - aware.lastAsk < Math.max(20, a.minGap || 150)) return;
+  ask(reason, ctx0);
+}
+
+function moveList() {
+  return Object.keys(anims).filter(k => ["idle", "walk", "run", "sleep", "held", "fall", "land"].indexOf(k) < 0);
+}
+
+/* Ollama constrains generation to this, so `do` can only ever be a move he has. */
+function replySchema(maxWords) {
+  return {
+    type: "object",
+    properties: { say: { type: "string" }, do: { type: "string", enum: moveList() } },
+    required: ["say", "do"]
+  };
+}
+
+/* A 1B model will happily echo a placeholder like "<seven words>" straight back. */
+function clean(text, limit) {
+  return String(text || "")
+    .replace(/[<>{}]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, limit || 60);
+}
+
+function situation(ctx0) {
+  const a = state.awareness || {};
+  const bits = [];
+  if (a.seeTime) bits.push("It is " + new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) + ".");
+  if (a.seeIdle && ctx0 && ctx0.idle > 120) bits.push("They were away for " + Math.round(ctx0.idle / 60) + " minutes.");
+  else if (a.seeApp && ctx0 && ctx0.app) bits.push("They are in " + ctx0.app + ".");
+  return bits.join(" ");
+}
+
+function ask(reason, ctx0) {
+  const a = state.awareness || {};
+  if (!a.enabled || !a.model) return;
+  aware.lastAsk = Date.now() / 1000;
+  const id = "r" + (++aware.seq);
+  aware.pending = id;
+  send("askModel", {
+    id: id, endpoint: a.endpoint, model: a.model, timeoutMs: 30000, temperature: 0.9, maxTokens: 60,
+    schema: replySchema(7),
+    system: (a.persona || "") + " Keep every reply to at most seven lowercase words. Never ask a question.",
+    prompt: reason.charAt(0).toUpperCase() + reason.slice(1) + ". " + situation(ctx0) +
+            " Say one short thing about it, and pick a move."
+  });
+}
+
+function parseReply(text) {
+  try { return JSON.parse(text); }
+  catch (e) {
+    const m = String(text || "").match(/\{[\s\S]*\}/);
+    if (m) { try { return JSON.parse(m[0]); } catch (e2) {} }
+  }
+  return null;
+}
+
+function onModelReply(msg) {
+  if (msg.id === talk.pending) { onTalkReply(msg); return; }
+  if (msg.id !== aware.pending) return;
+  aware.pending = null;
+  if (!msg.ok) return;
+  const obj = parseReply(msg.text);
+  if (!obj) return;
+  const line = clean(obj.say, 56);
+  if (line) say(line, 4);
+  if (obj.do && anims[obj.do] && !pet.asleep && !pet.dragging && !talk.open) setAction(obj.do, 3);
+}
+
+
+/* ---------- talking to him ----------
+   Click him and a line opens under his chin. Simple things are understood without
+   any model at all — "dance", "come here", "play ball" — so he is useful before
+   the model has loaded and if you never set one up. Anything else is a question,
+   and goes to whatever small local model is configured. */
+
+const talk = { open: false, pending: null, seq: 0, history: [], closeAt: 0 };
+
+const COMMANDS = [
+  { re: /\b(dance|boogie|party)\b/,                     run: () => { setAction("dance", 6); return "🙂"; } },
+  { re: /\b(sleep|nap|bed|goodnight|good night)\b/,     run: () => { putAwayBall(); setAction("sleep", 9999); return "night"; } },
+  { re: /\b(wake|morning|get up)\b/,                    run: () => { setAction("idle", 1); return "morning"; } },
+  { re: /\b(come|here|follow me)\b/,                    run: () => { if (mouse.ok) walkTo(mouse.x, true); return "coming"; } },
+  { re: /\b(ball|football|soccer|play|kick)\b/,          run: () => { startPlaying(30); return "watch this"; } },
+  { re: /\b(flip|backflip|trick)\b/,                    run: () => { setAction("flip", 0.6); return "hup"; } },
+  { re: /\b(jump|hop)\b/,                               run: () => { pet.vy = -520; setAction("fall", 4); return "wheee"; } },
+  { re: /\b(wave|hi|hey|hello|yo)\b/,                   run: () => { setAction("wave", 3); return "hello"; } },
+  { re: /\b(work|busy|focus)\b/,                        run: () => { setAction("work", 8); return "on it"; } },
+  { re: /\b(coffee|drink|tea|break)\b/,                 run: () => { setAction("drink", 6); return "ahh"; } },
+  { re: /\b(think|hmm|ponder)\b/,                       run: () => { setAction("think", 5); return "hmm"; } },
+  { re: /\b(bigger|grow)\b/,                            run: () => { state.look.scale = Math.min(8, (state.look.scale || 4) + 1); persist(); return "big"; } },
+  { re: /\b(smaller|shrink|tiny)\b/,                    run: () => { state.look.scale = Math.max(2, (state.look.scale || 4) - 1); persist(); return "small"; } },
+  { re: /\b(faster|hurry|quick)\b/,                     run: () => { state.behavior.energy = Math.min(1, (state.behavior.energy || 0.5) + 0.2); persist(); return "ok!"; } },
+  { re: /\b(slower|calm|settle)\b/,                     run: () => { state.behavior.energy = Math.max(0, (state.behavior.energy || 0.5) - 0.2); persist(); return "…fine"; } },
+  { re: /\b(quiet|shh|hush|shut)\b/,                    run: () => { state.behavior.speech = false; persist(); return "…"; } },
+  { re: /\b(talk|speak|noisy)\b/,                       run: () => { state.behavior.speech = true; persist(); return "back"; } },
+  { re: /\b(hide|go away|leave)\b/,                     run: () => { send("hidePet"); return "bye"; } },
+  { re: /\b(good|nice|well done|thanks|love)\b/,        run: () => { heart(pet.x, pet.y - window.CB.GRID * scale() - 6); setAction("wave", 3); return "🙂"; } },
+  { re: /\b(score|keepie|keepy|record)\b/,              run: () => "best: " + ((state.stats && state.stats.bestKeepies) || 0) }
+];
+
+function persist() { send("saveState", { state: state }); }
+
+function openTalk() {
+  if (talk.open) return;
+  talk.open = true;
+  talk.closeAt = Date.now() / 1000 + 20;
+  pet.target = null;
+  setAction("idle", 9999);
+  talkEl.classList.add("on");
+  bubbleEl.classList.remove("on");
+  send("beginTalk");
+  say(Math.random() < 0.5 ? "hmm?" : "what's up", 1.6);
+  setTimeout(() => { talkInput.value = ""; talkInput.focus(); }, 30);
+}
+
+function closeTalk() {
+  if (!talk.open) return;
+  talk.open = false;
+  talkEl.classList.remove("on");
+  talkInput.blur();
+  send("endTalk");
+  pet.hold = 0.4;
+}
+
+function submitTalk() {
+  const text = talkInput.value.trim();
+  talkInput.value = "";
+  if (!text) { closeTalk(); return; }
+  talk.closeAt = Date.now() / 1000 + 25;
+  pet.lastInteraction = Date.now() / 1000;
+
+  for (const c of COMMANDS) {
+    if (c.re.test(text.toLowerCase())) { say(c.run(), 3); return; }
+  }
+
+  const a = state.awareness || {};
+  if (!a.model) {
+    say("try: dance · ball · come · flip · sleep", 5);
+    return;
+  }
+  say("…", 30);
+  const id = "t" + (++talk.seq);
+  talk.pending = id;
+  const recent = talk.history.slice(-2).map(h => "They said: " + h.q + " You said: " + h.a).join(" ");
+  talk.history.push({ q: text, a: "" });
+  send("askModel", {
+    id: id, endpoint: a.endpoint, model: a.model, timeoutMs: 40000, temperature: 0.8, maxTokens: 90,
+    schema: replySchema(20),
+    system: (a.persona || "") +
+      " You are being spoken to directly. Answer in at most twenty words, lowercase, warm and brief. Pick a move that suits your answer.",
+    prompt: (recent ? recent + " " : "") + situation(aware.context) + " They say: " + text
+  });
+}
+
+function onTalkReply(msg) {
+  talk.pending = null;
+  if (!msg.ok) { say("…the model didn't answer", 3); return; }
+  const obj = parseReply(msg.text);
+  if (!obj) { say("…", 2); return; }
+  const line = clean(obj.say, 120) || "hm";
+  if (talk.history.length) talk.history[talk.history.length - 1].a = line;
+  say(line, Math.min(9, 2.5 + line.length / 18));
+  if (obj.do && anims[obj.do]) setAction(obj.do, 3);
+  talk.closeAt = Date.now() / 1000 + 20;
+}
+
+talkInput.addEventListener("keydown", e => {
+  e.stopPropagation();
+  if (e.key === "Enter") { e.preventDefault(); submitTalk(); }
+  else if (e.key === "Escape") { e.preventDefault(); closeTalk(); }
+  talk.closeAt = Date.now() / 1000 + 25;
+});
+
+/* ---------- pointer ---------- */
+let clickTimer = null;
+cv.addEventListener("pointerdown", e => {
+  if (e.button !== 0) { send("openStudio"); return; }
+  pet.lastInteraction = Date.now() / 1000;
+  pet.dragging = true;
+  pet.grabDX = pet.x - (mouse.ok ? mouse.x : winX + e.clientX);
+  pet.grabDY = pet.y - (mouse.ok ? mouse.y : winY + e.clientY);
+  pet.vx = pet.vy = 0;
+  setAction("held", 9999);
+  cv.setPointerCapture(e.pointerId);
+});
+cv.addEventListener("pointerup", () => {
+  if (!pet.dragging) return;
+  pet.dragging = false;
+  setAction("fall", 9999);
+});
+cv.addEventListener("dblclick", () => {
+  clearTimeout(clickTimer);
+  pet.lastInteraction = Date.now() / 1000;
+  setAction("flip", 0.6);
+});
+cv.addEventListener("click", () => {
+  if (!state.behavior.clickReact) return;
+  pet.lastInteraction = Date.now() / 1000;
+  if (pet.asleep) { setAction("idle", 1); say("…up, up"); return; }
+  clearTimeout(clickTimer);
+  clickTimer = setTimeout(() => {
+    if (isPlaying()) { tryKickHard(); return; }
+    if (state.behavior.talkOnClick !== false) { openTalk(); return; }
+    pet.vy = -430;
+    setAction("fall", 9999);
+    if (Math.random() < 0.55) say(randomPhrase());
+  }, 190);
+});
+function tryKickHard() {
+  if (!ball) return;
+  ball.vx = pet.facing * 150; ball.vy = -340;
+  setAction("kick", 0.45);
+}
+
+/* ---------- loop ---------- */
+let last = performance.now();
+function tick(now) {
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  update(dt);
+  render();
+  place();
+  requestAnimationFrame(tick);
+}
+
+function update(dt) {
+  const b = state.behavior;
+  const g = ground();
+
+  updateBall(dt);
+  updateEffects(dt);
+
+  if (talk.open) {
+    if (Date.now() / 1000 > talk.closeAt) closeTalk();
+    else if (!pet.dragging) { advance(dt); return; }   /* he stands still and listens */
+  }
+
+  if (pet.dragging) {
+    if (mouse.ok) {
+      const nx = mouse.x + pet.grabDX, ny = mouse.y + pet.grabDY;
+      pet.vx = (nx - pet.x) / Math.max(dt, 0.001) * 0.25;
+      pet.vy = (ny - pet.y) / Math.max(dt, 0.001) * 0.25;
+      pet.x = nx; pet.y = ny;
+    }
+    clampX();
+    advance(dt);
+    return;
+  }
+
+  if (pet.action === "fall" || pet.y < g - 0.5) {
+    if (pet.action !== "fall" && pet.action !== "land" && pet.action !== "flip") setAction("fall", 9999);
+    const wasFast = pet.vy;
+    pet.vy += (b.gravity || 1400) * dt;
+    pet.y += pet.vy * dt;
+    pet.x += pet.vx * dt;
+    pet.vx *= 0.985;
+    if (pet.x <= minX() || pet.x >= maxX()) { pet.vx = -pet.vx * 0.5; clampX(); }
+    if (pet.y >= g) {
+      pet.y = g;
+      if (pet.vy > 700) { pet.vy = -pet.vy * 0.28; puff(pet.x, g, 3); }
+      else {
+        if (wasFast > 260) puff(pet.x, g, 2);
+        else if (wasFast > 40 && Math.random() < 0.5) heart(pet.x, g - window.CB.GRID * scale() - 6);
+        pet.vy = 0; pet.vx = 0; setAction("land", 0.32);
+      }
+    }
+  } else if (pet.action === "walk" || pet.action === "run") {
+    const speed = pet.action === "run" ? (b.runSpeed || 74) : (b.walkSpeed || 26);
+    const t = pet.target == null ? pet.x : pet.target;
+    const dir = Math.sign(t - pet.x);
+    if (dir !== 0) pet.facing = dir;
+    pet.x += dir * speed * dt;
+    if (Math.abs(t - pet.x) < speed * dt + 1) { pet.x = t; pet.target = null; setAction("idle", 0.8 + Math.random()); }
+    clampX();
+    if (pet.x <= minX() || pet.x >= maxX()) { pet.target = null; setAction("idle", 1); }
+  } else if (pet.action === "land" || pet.action === "kick" || pet.action === "flip") {
+    if (pet.actionT > pet.hold) setAction("idle", isPlaying() ? 0.15 : 1);
+  }
+
+  if (isPlaying()) tryKick(dt);
+
+  pet.actionT += dt;
+  const free = !pet.asleep && ["fall", "land", "kick", "flip"].indexOf(pet.action) < 0;
+  if (free && pet.actionT > pet.hold) {
+    const gap = isPlaying() ? 0.15 : 0.6 + (1 - (b.energy == null ? 0.5 : b.energy)) * 3.5;
+    if (pet.actionT > pet.hold + Math.random() * gap) decide();
+  }
+  if (pet.asleep) {
+    const near = mouse.ok && Math.abs(mouse.x - pet.x) < 70 && Math.abs(mouse.y - pet.y) < 90;
+    if (near) { pet.lastInteraction = Date.now() / 1000; setAction("idle", 1.2); say("hm?"); }
+  }
+  advance(dt);
+}
+
+function advance(dt) {
+  const a = anims[pet.action] || anims.idle;
+  pet.frameT += dt;
+  const step = 1 / a.fps;
+  while (pet.frameT >= step) {
+    pet.frameT -= step;
+    if (pet.frame + 1 >= a.frames.length) pet.frame = a.loop ? 0 : a.frames.length - 1;
+    else pet.frame++;
+  }
+}
+
+function render() {
+  const dpr = window.devicePixelRatio || 1;
+  if (cv.width !== WIN_W * dpr) { cv.width = WIN_W * dpr; cv.height = WIN_H * dpr; }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, WIN_W, WIN_H);
+  ctx.imageSmoothingEnabled = false;
+
+  const a = anims[pet.action] || anims.idle;
+  const f = Math.min(pet.frame, a.frames.length - 1);
+  const s = scale();
+  const CBx = window.CB;
+  const lift = Math.max(0, ground() - pet.y);
+  const airborne = lift > 1;
+
+  if (state.look.shadow && !pet.dragging) {
+    const y = BASE_Y + Math.min(80, lift);
+    if (y < WIN_H - 1) CBx.drawShadow(ctx, CX, y, s, airborne ? 0.10 : 0.18);
+  }
+
+  /* props that belong to what he is doing */
+  if (state.behavior.useProps && !pet.dragging && !airborne) {
+    if (pet.action === "work") CBx.drawProp(ctx, "laptop", Math.floor(pet.frame / 2), {
+      cx: CX + pet.facing * (s * 7), cy: BASE_Y - s * 3, scale: Math.max(2, s - 1) });
+    if (pet.action === "drink") CBx.drawProp(ctx, "mug", Math.floor(Date.now() / 400), {
+      cx: CX + pet.facing * (s * 7), cy: BASE_Y - s * 3, scale: Math.max(2, s - 1) });
+  }
+
+  CBx.drawFrame(ctx, a.frames[f], {
+    cx: CX, baseY: BASE_Y + (CBx.GRID - CBx.FOOT_ROW) * s, scale: s, palette: palette,
+    flip: pet.facing < 0, bob: a.bob[f] || 0, alpha: state.look.opacity == null ? 1 : state.look.opacity
+  });
+
+  if (ball) {
+    const r = ballR();
+    CBx.drawShadow(ctx, toWinX(ball.x), BASE_Y + Math.min(80, lift), Math.max(2, r * 0.6), 0.12 * ball.alpha);
+    CBx.drawBall(ctx, { cx: toWinX(ball.x), cy: toWinY(ball.y), r: r, angle: ball.angle, alpha: ball.alpha });
+  }
+
+  for (const e of effects) {
+    CBx.drawProp(ctx, e.name, 0, {
+      cx: toWinX(e.x), cy: toWinY(e.y), scale: e.scale, alpha: Math.max(0, 1 - e.t / e.life)
+    });
+  }
+}
+
+/* window follows him; the bubble sits just above his head */
+function place() {
+  const nx = Math.round(pet.x - CX), ny = Math.round(pet.y - BASE_Y);
+  if (nx !== winX || ny !== winY) { winX = nx; winY = ny; send("move", { x: nx, y: ny }); }
+
+  const s = scale();
+  const top = BASE_Y - (window.CB.FOOT_ROW - 2) * s;   /* top of his head, in window pixels */
+  const wantBottom = Math.round(WIN_H - top + 6);
+  if (wantBottom !== bubbleBottom) {
+    bubbleBottom = wantBottom;
+    bubbleEl.style.bottom = wantBottom + "px";
+    talkEl.style.bottom = wantBottom + "px";
+  }
+
+  if (mouse.ok) {
+    const halfW = spriteW() / 2 + 8, h = window.CB.GRID * s + 10;
+    const over = pet.dragging || talk.open ||
+      (mouse.x > pet.x - halfW && mouse.x < pet.x + halfW && mouse.y > pet.y - h && mouse.y < pet.y + 8);
+    if (over !== hovering) {
+      hovering = over;
+      if (ignoring === over) { ignoring = !over; send("setIgnoreMouse", { value: ignoring }); }
+    }
+  }
+}
+
+send("ready");
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>

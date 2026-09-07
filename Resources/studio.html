@@ -1,0 +1,798 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Buddy Studio</title>
+<style>
+  :root {
+    --paper:#f5f4ee; --ink:#2b1a14; --line:#ddd8cc; --accent:#c4785a;
+    --panel:#fffdf7; --muted:#7d7266;
+  }
+  * { box-sizing:border-box; }
+  html, body { margin:0; height:100%; background:var(--paper); color:var(--ink);
+    font:13px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+    -webkit-user-select:none; user-select:none; }
+  button, input, select, textarea { font:inherit; color:inherit; }
+  #app { display:flex; flex-direction:column; height:100%; }
+
+  header { display:flex; align-items:center; gap:14px; padding:12px 16px;
+    border-bottom:1px solid var(--line); background:var(--panel); }
+  #heroWrap { width:96px; height:84px; border:1px solid var(--line); border-radius:10px;
+    background:repeating-conic-gradient(#efece2 0% 25%, #f7f5ef 0% 50%) 0/14px 14px; flex:none; }
+  #hero { width:96px; height:84px; image-rendering:pixelated; }
+  .who { flex:none; }
+  .who input { width:150px; padding:5px 8px; border:1px solid var(--line); border-radius:7px; background:var(--paper); }
+  .who .lbl { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin-bottom:4px; }
+  .spacer { flex:1; }
+  .quick { display:flex; gap:6px; flex-wrap:wrap; max-width:420px; justify-content:flex-end; }
+
+  button { background:var(--panel); border:1px solid var(--line); border-radius:7px;
+    padding:5px 10px; cursor:pointer; }
+  button:hover { border-color:var(--accent); }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.primary:hover { filter:brightness(1.06); }
+  button.danger:hover { border-color:#b4453a; color:#b4453a; }
+  button[disabled] { opacity:.45; cursor:default; }
+
+  nav { display:flex; gap:2px; padding:8px 16px 0; border-bottom:1px solid var(--line); background:var(--panel); }
+  nav button { border:1px solid transparent; border-bottom:none; border-radius:8px 8px 0 0; background:transparent; padding:7px 14px; }
+  nav button.on { background:var(--paper); border-color:var(--line); margin-bottom:-1px; }
+
+  main { flex:1; overflow:auto; padding:16px; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(190px, 1fr)); gap:12px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:10px; }
+  .card canvas { width:100%; height:96px; image-rendering:pixelated;
+    background:repeating-conic-gradient(#efece2 0% 25%, #f7f5ef 0% 50%) 0/12px 12px; border-radius:8px; }
+  .card .title { display:flex; align-items:center; gap:6px; margin:8px 0 2px; font-weight:600; }
+  .tag { font-size:10px; padding:1px 5px; border-radius:5px; background:#eee9dc; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+  .card .meta { color:var(--muted); font-size:11px; }
+  .card .row { display:flex; gap:5px; margin-top:8px; flex-wrap:wrap; }
+  .card label.rot { display:flex; align-items:center; gap:5px; margin-top:7px; font-size:11px; color:var(--muted); }
+
+  .editor { display:grid; grid-template-columns:auto 1fr; gap:18px; align-items:start; }
+  #grid { image-rendering:pixelated; background:#fffdf7; border:1px solid var(--line); border-radius:8px; cursor:crosshair; }
+  .tools { display:flex; gap:6px; flex-wrap:wrap; margin:10px 0; }
+  .swatches { display:flex; gap:6px; margin:10px 0; }
+  .sw { width:30px; height:30px; border-radius:7px; border:2px solid var(--line); cursor:pointer; }
+  .sw.on { border-color:var(--ink); box-shadow:0 0 0 2px #fff inset; }
+  .frames { display:flex; gap:8px; flex-wrap:wrap; margin:6px 0 12px; }
+  .fr { border:2px solid var(--line); border-radius:8px; padding:4px; background:var(--panel); cursor:pointer; text-align:center; }
+  .fr.on { border-color:var(--accent); }
+  .fr canvas { display:block; width:52px; height:52px; image-rendering:pixelated; }
+  .fr .n { font-size:10px; color:var(--muted); }
+  .fr input { width:44px; margin-top:3px; padding:1px 3px; border:1px solid var(--line); border-radius:4px; background:var(--paper); text-align:center; font-size:10px; }
+
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px; margin-bottom:14px; }
+  .panel h3 { margin:0 0 10px; font-size:12px; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); }
+  .field { display:flex; align-items:center; gap:10px; margin:9px 0; }
+  .field label { width:150px; flex:none; color:var(--ink); }
+  .field .val { width:56px; text-align:right; color:var(--muted); font-variant-numeric:tabular-nums; }
+  input[type=range] { flex:1; accent-color:var(--accent); }
+  input[type=text], input[type=number], select, textarea {
+    padding:5px 8px; border:1px solid var(--line); border-radius:7px; background:var(--paper); }
+  textarea { width:100%; min-height:110px; resize:vertical; font:12px/1.5 ui-monospace, Menlo, monospace; }
+  input[type=color] { width:44px; height:30px; padding:0; border:1px solid var(--line); border-radius:7px; background:none; }
+  input[type=checkbox] { accent-color:var(--accent); width:15px; height:15px; }
+  .two { display:grid; grid-template-columns:1fr 1fr; gap:14px; align-items:start; }
+  .hint { color:var(--muted); font-size:11px; margin-top:6px; }
+  footer { display:flex; gap:8px; align-items:center; padding:10px 16px; border-top:1px solid var(--line); background:var(--panel); }
+  #saved { color:var(--muted); font-size:11px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div id="heroWrap"><canvas id="hero" width="192" height="168"></canvas></div>
+    <div class="who">
+      <div class="lbl">name</div>
+      <input id="name" maxlength="24">
+    </div>
+    <div class="spacer"></div>
+    <div class="quick">
+      <button data-cmd="wake">Wake</button>
+      <button data-cmd="come">Come here</button>
+      <button data-cmd="jump">Jump</button>
+      <button data-cmd="ball">Play ball</button>
+      <button data-cmd="flip">Backflip</button>
+      <button data-cmd="sleep">Sleep</button>
+      <button data-cmd="center">Recentre</button>
+      <button id="togglePet">Hide buddy</button>
+    </div>
+  </header>
+
+  <nav>
+    <button data-tab="anims" class="on">Animations</button>
+    <button data-tab="editor">Editor</button>
+    <button data-tab="look">Look</button>
+    <button data-tab="behavior">Behaviour</button>
+    <button data-tab="aware">Awareness</button>
+  </nav>
+
+  <main>
+    <section id="tab-anims">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+        <button class="primary" id="newAnim">+ New animation</button>
+        <span class="hint" style="margin:0">Ticked animations go into the rotation he picks from on his own.</span>
+      </div>
+      <div class="cards" id="animCards"></div>
+    </section>
+
+    <section id="tab-editor" hidden>
+      <div class="editor">
+        <div>
+          <canvas id="grid" width="352" height="352"></canvas>
+          <div class="swatches" id="swatches"></div>
+          <div class="tools">
+            <button data-tool="pencil" class="primary">Pencil</button>
+            <button data-tool="fill">Fill</button>
+            <button data-tool="pick">Pick</button>
+            <label style="display:flex;align-items:center;gap:5px;padding-left:6px">
+              <input type="checkbox" id="onion"> onion skin</label>
+          </div>
+          <div class="tools">
+            <button data-act="clear">Clear</button>
+            <button data-act="flip">Flip</button>
+            <button data-act="up">↑</button><button data-act="down">↓</button>
+            <button data-act="left">←</button><button data-act="right">→</button>
+            <button data-act="copyprev">Copy previous</button>
+          </div>
+        </div>
+        <div>
+          <div class="panel">
+            <h3>Frames</h3>
+            <div class="frames" id="frameStrip"></div>
+            <div class="tools">
+              <button data-act="addframe">+ Frame</button>
+              <button data-act="dupframe">Duplicate</button>
+              <button data-act="delframe" class="danger">Delete</button>
+              <button data-act="moveleft">◀ Move</button>
+              <button data-act="moveright">Move ▶</button>
+            </div>
+            <div class="hint">The number under each frame nudges him up or down that many pixels — that is what makes a walk bounce.</div>
+          </div>
+          <div class="panel">
+            <h3>Animation</h3>
+            <div class="field"><label>Name</label><input type="text" id="animName" style="flex:1"></div>
+            <div class="field"><label>Frames per second</label><input type="range" id="animFps" min="1" max="24" step="1"><span class="val" id="animFpsV"></span></div>
+            <div class="field"><label>Loop</label><input type="checkbox" id="animLoop"></div>
+            <div class="field"><label>Start from</label>
+              <select id="loadFrom" style="flex:1"></select>
+              <button data-act="load">Load</button></div>
+            <div class="tools">
+              <button class="primary" data-act="save">Save</button>
+              <button data-act="saveas">Save as new</button>
+              <button data-act="preview">Play on desktop</button>
+            </div>
+            <div class="hint" id="editorHint"></div>
+          </div>
+          <div class="panel">
+            <h3>Preview</h3>
+            <canvas id="editPreview" width="320" height="200" style="width:320px;height:200px;image-rendering:pixelated;background:repeating-conic-gradient(#efece2 0% 25%,#f7f5ef 0% 50%) 0/14px 14px;border-radius:8px"></canvas>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-look" hidden>
+      <div class="two">
+        <div>
+          <div class="panel">
+            <h3>Colours</h3>
+            <div class="field"><label>Body</label><input type="color" id="cBody"><span class="hint" style="margin:0">everything else follows this</span></div>
+            <div class="field"><label>Shade</label><input type="color" id="cShade"><label style="width:auto;display:flex;gap:5px;align-items:center"><input type="checkbox" id="pinShade"> pin</label></div>
+            <div class="field"><label>Highlight</label><input type="color" id="cLight"><label style="width:auto;display:flex;gap:5px;align-items:center"><input type="checkbox" id="pinLight"> pin</label></div>
+            <div class="field"><label>Eyes</label><input type="color" id="cDark"></div>
+            <div class="tools"><button data-act="resetColors">Reset colours</button></div>
+          </div>
+          <div class="panel">
+            <h3>Size and presence</h3>
+            <div class="field"><label>Size</label><input type="range" id="lScale" min="2" max="8" step="1"><span class="val" id="lScaleV"></span></div>
+            <div class="field"><label>Opacity</label><input type="range" id="lOpacity" min="0.3" max="1" step="0.05"><span class="val" id="lOpacityV"></span></div>
+            <div class="field"><label>Shadow</label><input type="checkbox" id="lShadow"></div>
+            <div class="field"><label>Always on top</label><input type="checkbox" id="bTop"></div>
+          </div>
+        </div>
+        <div class="panel">
+          <h3>Preview</h3>
+          <canvas id="lookPreview" width="360" height="260" style="width:360px;height:260px;image-rendering:pixelated;background:repeating-conic-gradient(#efece2 0% 25%,#f7f5ef 0% 50%) 0/16px 16px;border-radius:10px"></canvas>
+          <div class="hint">He only reacts to the mouse when the pointer is actually over him — everywhere else, clicks go straight through to whatever is underneath.</div>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-behavior" hidden>
+      <div class="two">
+        <div class="panel">
+          <h3>How he moves</h3>
+          <div class="field"><label>Energy</label><input type="range" id="bEnergy" min="0" max="1" step="0.05"><span class="val" id="bEnergyV"></span></div>
+          <div class="field"><label>Walk speed</label><input type="range" id="bWalk" min="5" max="120" step="1"><span class="val" id="bWalkV"></span></div>
+          <div class="field"><label>Run speed</label><input type="range" id="bRun" min="20" max="300" step="5"><span class="val" id="bRunV"></span></div>
+          <div class="field"><label>Gravity</label><input type="range" id="bGravity" min="200" max="3000" step="50"><span class="val" id="bGravityV"></span></div>
+          <div class="field"><label>Edge margin</label><input type="range" id="bEdge" min="0" max="200" step="4"><span class="val" id="bEdgeV"></span></div>
+        </div>
+        <div class="panel">
+          <h3>What he does</h3>
+          <div class="field"><label>Follow the cursor</label><input type="checkbox" id="bFollow"></div>
+          <div class="field"><label>React to clicks</label><input type="checkbox" id="bClick"></div>
+          <div class="field"><label>Click to talk to him</label><input type="checkbox" id="bTalk"></div>
+          <div class="field"><label>Speech bubbles</label><input type="checkbox" id="bSpeech"></div>
+          <div class="field"><label>Play with a ball</label><input type="checkbox" id="bBall"></div>
+          <div class="field"><label>Use props (laptop, mug)</label><input type="checkbox" id="bProps"></div>
+          <div class="field"><label>Wind down at night</label><input type="checkbox" id="bNight"></div>
+          <div class="hint">Best run of keepie-uppies: <b id="bestKeepies">0</b></div>
+          <div class="field"><label>Sleep after</label><input type="range" id="bSleep" min="0" max="600" step="10"><span class="val" id="bSleepV"></span></div>
+          <div class="hint">Sleep after 0 means he never naps.</div>
+          <h3 style="margin-top:16px">Things he says</h3>
+          <textarea id="bPhrases" spellcheck="false"></textarea>
+          <div class="hint">One per line.</div>
+        </div>
+      </div>
+    </section>
+    <section id="tab-aware" hidden>
+      <div class="two">
+        <div>
+          <div class="panel">
+            <h3>Local model</h3>
+            <div class="field"><label>React to what I do</label><input type="checkbox" id="aOn"></div>
+            <div class="field"><label>Endpoint</label><input type="text" id="aEndpoint" style="flex:1" spellcheck="false"></div>
+            <div class="field"><label>Model</label>
+              <select id="aModel" style="flex:1"></select>
+              <button data-act="refreshModels">Refresh</button></div>
+            <div class="field"><label>Wait between</label><input type="range" id="aGap" min="20" max="900" step="10"><span class="val" id="aGapV"></span></div>
+            <div class="tools"><button data-act="testModel">Test now</button></div>
+            <pre id="aOut" style="margin:8px 0 0; padding:8px; background:var(--paper); border:1px solid var(--line); border-radius:8px; font:11px/1.4 ui-monospace, Menlo, monospace; white-space:pre-wrap; min-height:34px; color:var(--muted)"></pre>
+            <div class="hint">Runs against Ollama on this machine. Nothing leaves it. A small model is plenty —
+              <code>ollama pull gemma3:1b</code> is about 800 MB and answers in a second or two.</div>
+          </div>
+        </div>
+        <div>
+          <div class="panel">
+            <h3>What he can notice</h3>
+            <div class="field"><label>Which app is in front</label><input type="checkbox" id="aApp"></div>
+            <div class="field"><label>How long you were away</label><input type="checkbox" id="aIdle"></div>
+            <div class="field"><label>The time of day</label><input type="checkbox" id="aTime"></div>
+            <div class="field"><label>The window's title</label><input type="checkbox" id="aTitle">
+              <button data-act="grantAX">Allow…</button></div>
+            <div class="hint" id="axStatus"></div>
+            <div class="hint">Window titles need macOS Accessibility, and they can carry more than you expect —
+              a document name, a subject line, the tab you are on. Never the contents, never your keystrokes,
+              never a picture of the screen. Turn it off and he falls back to app names alone.</div>
+          </div>
+          <div class="panel">
+            <h3>What he does about it</h3>
+            <div id="reactions"></div>
+            <div class="tools"><button data-act="addReaction">+ Add</button><button data-act="resetReactions">Reset</button></div>
+            <div class="hint">First match wins. The pattern is matched against the app name and window title
+              together, and it is a regular expression, so <code>spotify|music</code> catches either.</div>
+          </div>
+          <div class="panel">
+            <h3>Who he is</h3>
+            <textarea id="aPersona" spellcheck="false"></textarea>
+            <div class="hint">The system prompt. Change it and he changes character.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <button data-act="export">Export…</button>
+    <button data-act="import">Import…</button>
+    <div class="spacer" style="flex:1"></div>
+    <span id="saved"></span>
+    <button class="danger" data-act="reset">Reset everything</button>
+  </footer>
+</div>
+
+<script src="common.js"></script>
+<script>
+const CB = window.CB;
+let state = CB.mergeState(null);
+let anims = CB.animationsOf(state);
+let petVisible = true;
+
+function send(type, payload) {
+  try { window.webkit.messageHandlers.buddy.postMessage(Object.assign({ type: type, view: "studio" }, payload || {})); }
+  catch (e) {}
+}
+window.__onNative = function (msg) {
+  if (!msg) return;
+  if (msg.type === "state") { state = CB.mergeState(msg.state); anims = CB.animationsOf(state); renderAll(); }
+  else if (msg.type === "petVisible") { petVisible = !!msg.value; el("togglePet").textContent = petVisible ? "Hide buddy" : "Show buddy"; }
+  else if (msg.type === "saved") flash("saved");
+  else if (msg.type === "models") fillModels(msg.list, msg.error);
+  else if (msg.type === "accessibility") {
+    el("axStatus").textContent = msg.trusted
+      ? "Accessibility is granted — he can read window titles."
+      : "Not granted yet. Click Allow, tick Claude Buddy in System Settings, then reopen the app.";
+  }
+  else if (msg.type === "modelReply") {
+    el("aOut").textContent = msg.ok ? msg.text : ("failed: " + (msg.error || "no reply"));
+  }
+};
+
+const el = id => document.getElementById(id);
+let saveTimer = null;
+function save(immediate) {
+  clearTimeout(saveTimer);
+  const go = () => { send("saveState", { state: state }); flash("saved"); };
+  if (immediate) go(); else saveTimer = setTimeout(go, 260);
+}
+function flash(t) { el("saved").textContent = t; clearTimeout(flash._t); flash._t = setTimeout(() => el("saved").textContent = "", 1400); }
+function palette() { return CB.paletteFor(state.look.colors); }
+
+/* ---------------- tabs ---------------- */
+document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("nav button").forEach(x => x.classList.toggle("on", x === b));
+  ["anims", "editor", "look", "behavior", "aware"].forEach(t => el("tab-" + t).hidden = (t !== b.dataset.tab));
+});
+document.querySelectorAll(".quick button[data-cmd]").forEach(b => b.onclick = () => send("command", { cmd: b.dataset.cmd }));
+el("togglePet").onclick = () => { petVisible = !petVisible; send(petVisible ? "showPet" : "hidePet"); el("togglePet").textContent = petVisible ? "Hide buddy" : "Show buddy"; };
+el("name").oninput = e => { state.name = e.target.value; save(); };
+
+/* ---------------- looping canvas previews ---------------- */
+const players = [];
+function player(canvas, getAnim, opts) {
+  const p = { canvas: canvas, ctx: canvas.getContext("2d"), getAnim: getAnim, opts: opts || {}, frame: 0, t: 0 };
+  players.push(p);
+  return p;
+}
+let lastT = performance.now();
+function loop(now) {
+  const dt = Math.min(0.1, (now - lastT) / 1000); lastT = now;
+  for (const p of players) {
+    if (!p.canvas.isConnected) continue;
+    const a = p.getAnim();
+    if (!a) { p.ctx.clearRect(0, 0, p.canvas.width, p.canvas.height); continue; }
+    p.t += dt;
+    const step = 1 / a.fps;
+    while (p.t >= step) { p.t -= step; p.frame = (p.frame + 1) % a.frames.length; }
+    const f = Math.min(p.frame, a.frames.length - 1);
+    const ctx = p.ctx, W = p.canvas.width, H = p.canvas.height;
+    ctx.clearRect(0, 0, W, H);
+    ctx.imageSmoothingEnabled = false;
+    const s = p.opts.scale || Math.max(2, Math.floor(Math.min(W, H) / 20));
+    const baseY = p.opts.baseY || H - Math.round(H * 0.14);
+    CB.drawStanding(ctx, a.frames[f], {
+      cx: W / 2, groundY: baseY, scale: s, palette: palette(),
+      bob: a.bob[f] || 0, alpha: state.look.opacity, shadow: state.look.shadow, shadowAlpha: 0.16
+    });
+  }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+player(el("hero"), () => anims.idle, { scale: 9, baseY: 156 });
+player(el("lookPreview"), () => anims.walk, { scale: (state.look.scale || 3) * 2, baseY: 224 });
+player(el("editPreview"), () => draft, { scale: 8, baseY: 176 });
+
+/* ---------------- animations tab ---------------- */
+function renderCards() {
+  const wrap = el("animCards");
+  wrap.innerHTML = "";
+  for (const key of Object.keys(anims)) {
+    const a = anims[key];
+    const card = document.createElement("div");
+    card.className = "card";
+    const cnv = document.createElement("canvas");
+    cnv.width = 340; cnv.height = 190;
+    card.appendChild(cnv);
+    const required = CB.REQUIRED.indexOf(key) >= 0;
+    const custom = !CB.DEFAULT_ANIMATIONS[key];
+    const edited = !custom && !!(state.animations && state.animations[key]);
+    card.insertAdjacentHTML("beforeend",
+      '<div class="title">' + a.name +
+        (custom ? ' <span class="tag">yours</span>' : (edited ? ' <span class="tag">edited</span>' : '')) +
+        (required ? ' <span class="tag">core</span>' : '') + '</div>' +
+      '<div class="meta">' + a.frames.length + ' frames · ' + a.fps + ' fps' + (a.loop ? '' : ' · once') + '</div>' +
+      '<div class="row">' +
+        '<button data-play="' + key + '">Play on desktop</button>' +
+        '<button data-edit="' + key + '">Edit</button>' +
+        '<button data-dup="' + key + '">Copy</button>' +
+        (custom ? '<button class="danger" data-del="' + key + '">Delete</button>'
+                : (edited ? '<button class="danger" data-revert="' + key + '">Revert</button>' : '')) +
+      '</div>' +
+      (required ? '' : '<label class="rot"><input type="checkbox" data-rot="' + key + '"' +
+        ((state.rotation || []).indexOf(key) >= 0 ? ' checked' : '') + '> in his rotation</label>'));
+    wrap.appendChild(card);
+    player(cnv, () => anims[key], { scale: 8, baseY: 168 });
+  }
+  wrap.querySelectorAll("[data-play]").forEach(b => b.onclick = () => send("command", { cmd: "play", anim: b.dataset.play, seconds: 5 }));
+  wrap.querySelectorAll("[data-edit]").forEach(b => b.onclick = () => openEditor(b.dataset.edit));
+  wrap.querySelectorAll("[data-dup]").forEach(b => b.onclick = () => { openEditor(b.dataset.dup); draftKey = null; draft.name = anims[b.dataset.dup].name + " copy"; el("animName").value = draft.name; hint("A copy — Save will file it as a new animation."); });
+  wrap.querySelectorAll("[data-del]").forEach(b => b.onclick = () => {
+    delete state.animations[b.dataset.del];
+    state.rotation = (state.rotation || []).filter(k => k !== b.dataset.del);
+    anims = CB.animationsOf(state); save(true); renderAll();
+  });
+  wrap.querySelectorAll("[data-revert]").forEach(b => b.onclick = () => {
+    delete state.animations[b.dataset.revert];
+    anims = CB.animationsOf(state); save(true); renderAll();
+  });
+  wrap.querySelectorAll("[data-rot]").forEach(c => c.onchange = () => {
+    const k = c.dataset.rot;
+    const set = new Set(state.rotation || []);
+    c.checked ? set.add(k) : set.delete(k);
+    state.rotation = Array.from(set);
+    save();
+  });
+}
+el("newAnim").onclick = () => {
+  draft = CB.normalizeAnim({ name: "new animation", fps: 6, loop: true, frames: [CB.blankFrame()] });
+  draftKey = null; frameIndex = 0;
+  document.querySelector('nav button[data-tab="editor"]').click();
+  syncEditor(); hint("Draw, add frames, then Save.");
+};
+
+/* ---------------- editor ---------------- */
+let draft = CB.normalizeAnim(CB.DEFAULT_ANIMATIONS.idle, "idle");
+let draftKey = "idle";
+let frameIndex = 0;
+let tool = "pencil";
+let ink = "1";
+const CELL = 22;
+
+function hint(t) { el("editorHint").textContent = t || ""; }
+
+function openEditor(key) {
+  draft = CB.normalizeAnim(JSON.parse(JSON.stringify(anims[key])), key);
+  draftKey = key; frameIndex = 0;
+  document.querySelector('nav button[data-tab="editor"]').click();
+  syncEditor();
+  hint(CB.DEFAULT_ANIMATIONS[key] ? "Editing a built-in — Save overrides it, and you can revert later." : "Editing your animation.");
+}
+
+function syncEditor() {
+  el("animName").value = draft.name;
+  el("animFps").value = draft.fps; el("animFpsV").textContent = draft.fps + " fps";
+  el("animLoop").checked = draft.loop;
+  const sel = el("loadFrom");
+  sel.innerHTML = Object.keys(anims).map(k => '<option value="' + k + '">' + anims[k].name + '</option>').join("");
+  if (draftKey) sel.value = draftKey;
+  drawGrid(); drawStrip();
+}
+
+function drawGrid() {
+  const c = el("grid"), ctx = c.getContext("2d");
+  c.width = CELL * 16; c.height = CELL * 16;
+  ctx.clearRect(0, 0, c.width, c.height);
+  const pal = palette();
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+    ctx.fillStyle = ((x + y) % 2) ? "#f2efe6" : "#fbf9f3";
+    ctx.fillRect(x * CELL, y * CELL, CELL, CELL);
+  }
+  if (el("onion").checked && draft.frames.length > 1) {
+    const prev = draft.frames[(frameIndex - 1 + draft.frames.length) % draft.frames.length];
+    ctx.globalAlpha = 0.25;
+    paintFrame(ctx, prev, pal);
+    ctx.globalAlpha = 1;
+  }
+  paintFrame(ctx, draft.frames[frameIndex], pal);
+  ctx.strokeStyle = "rgba(43,26,20,.10)";
+  for (let i = 0; i <= 16; i++) {
+    ctx.beginPath(); ctx.moveTo(i * CELL + .5, 0); ctx.lineTo(i * CELL + .5, c.height); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, i * CELL + .5); ctx.lineTo(c.width, i * CELL + .5); ctx.stroke();
+  }
+  ctx.strokeStyle = "rgba(43,26,20,.32)";
+  ctx.beginPath(); ctx.moveTo(0, 14 * CELL + .5); ctx.lineTo(c.width, 14 * CELL + .5); ctx.stroke();
+}
+function paintFrame(ctx, rows, pal) {
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+    const ch = rows[y][x];
+    if (ch === "." || !pal[ch]) continue;
+    ctx.fillStyle = pal[ch];
+    ctx.fillRect(x * CELL, y * CELL, CELL, CELL);
+  }
+}
+
+function drawStrip() {
+  const strip = el("frameStrip");
+  strip.innerHTML = "";
+  draft.frames.forEach((f, i) => {
+    const d = document.createElement("div");
+    d.className = "fr" + (i === frameIndex ? " on" : "");
+    const c = document.createElement("canvas");
+    c.width = 52; c.height = 52;
+    const ctx = c.getContext("2d");
+    ctx.imageSmoothingEnabled = false;
+    CB.drawFrame(ctx, f, { cx: 26, baseY: 52, scale: 3, palette: palette(), bob: 0 });
+    d.appendChild(c);
+    d.insertAdjacentHTML("beforeend", '<div class="n">' + (i + 1) + '</div>');
+    const inp = document.createElement("input");
+    inp.type = "number"; inp.value = draft.bob[i] || 0; inp.min = -6; inp.max = 6; inp.step = 1;
+    inp.onclick = e => e.stopPropagation();
+    inp.oninput = () => { draft.bob[i] = Number(inp.value) || 0; };
+    d.appendChild(inp);
+    d.onclick = () => { frameIndex = i; drawGrid(); drawStrip(); };
+    strip.appendChild(d);
+  });
+}
+
+/* palette swatches */
+const SWATCH = [{ ch: ".", label: "erase" }, { ch: "1" }, { ch: "2" }, { ch: "3" }, { ch: "0" }, { ch: "w" }];
+function drawSwatches() {
+  const pal = palette();
+  el("swatches").innerHTML = "";
+  SWATCH.forEach(s => {
+    const d = document.createElement("div");
+    d.className = "sw" + (ink === s.ch ? " on" : "");
+    d.title = s.label || s.ch;
+    d.style.background = s.ch === "." ? "repeating-conic-gradient(#e6e2d6 0% 25%, #fff 0% 50%) 0/8px 8px" : pal[s.ch];
+    d.onclick = () => { ink = s.ch; drawSwatches(); };
+    el("swatches").appendChild(d);
+  });
+}
+
+let painting = false;
+function cellAt(e) {
+  const r = el("grid").getBoundingClientRect();
+  const x = Math.floor((e.clientX - r.left) / (r.width / 16));
+  const y = Math.floor((e.clientY - r.top) / (r.height / 16));
+  return (x < 0 || y < 0 || x > 15 || y > 15) ? null : { x: x, y: y };
+}
+function setPixel(x, y, ch) {
+  const row = draft.frames[frameIndex][y];
+  draft.frames[frameIndex][y] = row.slice(0, x) + ch + row.slice(x + 1);
+}
+function floodFill(x, y, ch) {
+  const rows = draft.frames[frameIndex], from = rows[y][x];
+  if (from === ch) return;
+  const stack = [[x, y]];
+  while (stack.length) {
+    const [cx, cy] = stack.pop();
+    if (cx < 0 || cy < 0 || cx > 15 || cy > 15) continue;
+    if (draft.frames[frameIndex][cy][cx] !== from) continue;
+    setPixel(cx, cy, ch);
+    stack.push([cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]);
+  }
+}
+el("grid").addEventListener("pointerdown", e => {
+  const c = cellAt(e); if (!c) return;
+  el("grid").setPointerCapture(e.pointerId);
+  if (tool === "pick") { ink = draft.frames[frameIndex][c.y][c.x]; drawSwatches(); return; }
+  painting = true;
+  if (tool === "fill") floodFill(c.x, c.y, ink); else setPixel(c.x, c.y, e.shiftKey ? "." : ink);
+  drawGrid(); drawStrip();
+});
+el("grid").addEventListener("pointermove", e => {
+  if (!painting || tool !== "pencil") return;
+  const c = cellAt(e); if (!c) return;
+  setPixel(c.x, c.y, e.shiftKey ? "." : ink);
+  drawGrid(); drawStrip();
+});
+window.addEventListener("pointerup", () => painting = false);
+el("onion").onchange = drawGrid;
+document.querySelectorAll("[data-tool]").forEach(b => b.onclick = () => {
+  tool = b.dataset.tool;
+  document.querySelectorAll("[data-tool]").forEach(x => x.classList.toggle("primary", x === b));
+});
+
+function transform(fn) {
+  const src = draft.frames[frameIndex].map(r => r.split(""));
+  const out = [];
+  for (let y = 0; y < 16; y++) { out.push(new Array(16).fill(".")); }
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+    const p = fn(x, y);
+    if (p.x >= 0 && p.x < 16 && p.y >= 0 && p.y < 16) out[p.y][p.x] = src[y][x];
+  }
+  draft.frames[frameIndex] = out.map(r => r.join(""));
+  drawGrid(); drawStrip();
+}
+
+document.querySelectorAll("[data-act]").forEach(b => b.onclick = () => {
+  const a = b.dataset.act;
+  if (a === "clear") { draft.frames[frameIndex] = CB.blankFrame(); drawGrid(); drawStrip(); }
+  else if (a === "flip") transform((x, y) => ({ x: 15 - x, y: y }));
+  else if (a === "up") transform((x, y) => ({ x: x, y: y - 1 }));
+  else if (a === "down") transform((x, y) => ({ x: x, y: y + 1 }));
+  else if (a === "left") transform((x, y) => ({ x: x - 1, y: y }));
+  else if (a === "right") transform((x, y) => ({ x: x + 1, y: y }));
+  else if (a === "copyprev") {
+    const i = (frameIndex - 1 + draft.frames.length) % draft.frames.length;
+    draft.frames[frameIndex] = draft.frames[i].slice(); drawGrid(); drawStrip();
+  }
+  else if (a === "addframe") { draft.frames.splice(frameIndex + 1, 0, CB.blankFrame()); draft.bob.splice(frameIndex + 1, 0, 0); frameIndex++; drawGrid(); drawStrip(); }
+  else if (a === "dupframe") { draft.frames.splice(frameIndex + 1, 0, draft.frames[frameIndex].slice()); draft.bob.splice(frameIndex + 1, 0, draft.bob[frameIndex] || 0); frameIndex++; drawGrid(); drawStrip(); }
+  else if (a === "delframe") {
+    if (draft.frames.length <= 1) { hint("An animation needs at least one frame."); return; }
+    draft.frames.splice(frameIndex, 1); draft.bob.splice(frameIndex, 1);
+    frameIndex = Math.max(0, frameIndex - 1); drawGrid(); drawStrip();
+  }
+  else if (a === "moveleft" && frameIndex > 0) { swapFrames(frameIndex, frameIndex - 1); frameIndex--; }
+  else if (a === "moveright" && frameIndex < draft.frames.length - 1) { swapFrames(frameIndex, frameIndex + 1); frameIndex++; }
+  else if (a === "load") { openEditor(el("loadFrom").value); }
+  else if (a === "save") saveDraft(false);
+  else if (a === "saveas") saveDraft(true);
+  else if (a === "preview") { const k = saveDraft(false); if (k) send("command", { cmd: "play", anim: k, seconds: 6 }); }
+  else if (a === "grantAX") send("requestAccessibility");
+  else if (a === "addReaction") { state.reactions.push({ match: "", do: "wave", say: "" }); save(); renderReactions(); }
+  else if (a === "resetReactions") { state.reactions = CB.mergeState(null).reactions; save(true); renderReactions(); }
+  else if (a === "refreshModels") refreshModels();
+  else if (a === "testModel") {
+    el("aOut").textContent = "asking " + (state.awareness.model || "…nothing selected") + "…";
+    send("askModel", {
+      id: "test", endpoint: state.awareness.endpoint, model: state.awareness.model, timeoutMs: 40000,
+      system: state.awareness.persona + " You answer only with a small JSON object.",
+      prompt: 'Right now: they just switched to a code editor; it is ' +
+        new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) +
+        '.\nReply with JSON only: {"say": "<at most 7 words, lowercase, no questions>", "do": "<one of: wave, dance, work, think, jump, flip, drink>"}'
+    });
+  }
+  else if (a === "resetColors") { state.look.colors = Object.assign({}, CB.DEFAULT_COLORS); save(); renderAll(); }
+  else if (a === "export") send("export");
+  else if (a === "import") send("import");
+  else if (a === "reset") { if (confirm("Put everything back to defaults? Your custom animations go too.")) { state = CB.mergeState(null); anims = CB.animationsOf(state); save(true); renderAll(); } }
+});
+function swapFrames(i, j) {
+  const f = draft.frames[i]; draft.frames[i] = draft.frames[j]; draft.frames[j] = f;
+  const b = draft.bob[i]; draft.bob[i] = draft.bob[j]; draft.bob[j] = b;
+  drawGrid(); drawStrip();
+}
+
+el("animName").oninput = e => draft.name = e.target.value;
+el("animFps").oninput = e => { draft.fps = Number(e.target.value); el("animFpsV").textContent = draft.fps + " fps"; };
+el("animLoop").onchange = e => draft.loop = e.target.checked;
+
+function slug(s) {
+  const base = String(s || "anim").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "anim";
+  let k = base, n = 2;
+  while (anims[k]) { k = base + "-" + n; n++; }
+  return k;
+}
+function saveDraft(asNew) {
+  draft.name = (el("animName").value || "untitled").slice(0, 28);
+  const key = (asNew || !draftKey) ? slug(draft.name) : draftKey;
+  state.animations[key] = CB.normalizeAnim(JSON.parse(JSON.stringify(draft)), key);
+  draftKey = key;
+  anims = CB.animationsOf(state);
+  save(true);
+  renderCards();
+  hint('Saved as "' + draft.name + '".');
+  return key;
+}
+
+/* ---------------- look + behaviour ---------------- */
+function bindColor(id, key) {
+  el(id).oninput = e => { state.look.colors[key] = e.target.value; save(); renderCards(); drawSwatches(); drawGrid(); drawStrip(); };
+}
+bindColor("cBody", "body"); bindColor("cShade", "shade"); bindColor("cLight", "light"); bindColor("cDark", "dark");
+el("pinShade").onchange = e => { state.look.colors.pinShade = e.target.checked; save(); renderAll(); };
+el("pinLight").onchange = e => { state.look.colors.pinLight = e.target.checked; save(); renderAll(); };
+
+function bindRange(id, get, set, fmt) {
+  const input = el(id), out = el(id + "V");
+  input.oninput = e => { set(Number(e.target.value)); if (out) out.textContent = fmt(Number(e.target.value)); save(); };
+}
+bindRange("lScale", null, v => { state.look.scale = v; players[1].opts.scale = v * 2; }, v => v + "×");
+bindRange("lOpacity", null, v => state.look.opacity = v, v => Math.round(v * 100) + "%");
+bindRange("bEnergy", null, v => state.behavior.energy = v, v => Math.round(v * 100) + "%");
+bindRange("bWalk", null, v => state.behavior.walkSpeed = v, v => v + " px/s");
+bindRange("bRun", null, v => state.behavior.runSpeed = v, v => v + " px/s");
+bindRange("bGravity", null, v => state.behavior.gravity = v, v => String(v));
+bindRange("bEdge", null, v => state.behavior.edgeMargin = v, v => v + " px");
+bindRange("bSleep", null, v => state.behavior.sleepAfter = v, v => v === 0 ? "never" : v + " s");
+
+el("lShadow").onchange = e => { state.look.shadow = e.target.checked; save(); };
+el("bTop").onchange = e => { state.look.alwaysOnTop = e.target.checked; state.behavior.alwaysOnTop = e.target.checked; save(true); };
+el("bFollow").onchange = e => { state.behavior.followCursor = e.target.checked; save(); };
+el("bClick").onchange = e => { state.behavior.clickReact = e.target.checked; save(); };
+el("bSpeech").onchange = e => { state.behavior.speech = e.target.checked; save(); };
+el("bBall").onchange = e => { state.behavior.playBall = e.target.checked; save(); };
+el("bProps").onchange = e => { state.behavior.useProps = e.target.checked; save(); };
+el("bNight").onchange = e => { state.behavior.nightMode = e.target.checked; save(); };
+el("aOn").onchange = e => { state.awareness.enabled = e.target.checked; save(true); if (e.target.checked) refreshModels(); };
+el("aEndpoint").oninput = e => { state.awareness.endpoint = e.target.value.trim(); save(); };
+el("aModel").onchange = e => { state.awareness.model = e.target.value; save(true); };
+el("aApp").onchange = e => { state.awareness.seeApp = e.target.checked; save(); };
+el("aIdle").onchange = e => { state.awareness.seeIdle = e.target.checked; save(); };
+el("aTime").onchange = e => { state.awareness.seeTime = e.target.checked; save(); };
+el("aPersona").oninput = e => { state.awareness.persona = e.target.value; save(); };
+el("aTitle").onchange = e => { state.awareness.seeTitle = e.target.checked; save(true); if (e.target.checked) send("requestAccessibility"); };
+el("bTalk").onchange = e => { state.behavior.talkOnClick = e.target.checked; save(); };
+
+function renderReactions() {
+  const wrap = el("reactions");
+  wrap.innerHTML = "";
+  const moves = Object.keys(anims).concat(["ball"]);
+  (state.reactions || []).forEach((r, i) => {
+    const row = document.createElement("div");
+    row.className = "field";
+    row.innerHTML =
+      '<input type="text" data-r="match" data-i="' + i + '" value="' + String(r.match || "").replace(/"/g, "&quot;") +
+      '" style="flex:2" spellcheck="false" placeholder="app or title matches…">' +
+      '<select data-r="do" data-i="' + i + '" style="flex:1">' +
+        moves.map(m => '<option value="' + m + '"' + (m === r.do ? " selected" : "") + '>' + m + '</option>').join("") +
+      '</select>' +
+      '<input type="text" data-r="say" data-i="' + i + '" value="' + String(r.say || "").replace(/"/g, "&quot;") +
+      '" style="flex:1" placeholder="says (optional)">' +
+      '<button data-del-r="' + i + '" class="danger">×</button>';
+    wrap.appendChild(row);
+  });
+  wrap.querySelectorAll("[data-r]").forEach(inp => {
+    inp.oninput = inp.onchange = () => {
+      state.reactions[Number(inp.dataset.i)][inp.dataset.r] = inp.value;
+      save();
+    };
+  });
+  wrap.querySelectorAll("[data-del-r]").forEach(b => b.onclick = () => {
+    state.reactions.splice(Number(b.dataset.delR), 1); save(true); renderReactions();
+  });
+}
+bindRange("aGap", null, v => state.awareness.minGap = v, v => v + " s");
+
+function refreshModels() {
+  el("aOut").textContent = "looking for models…";
+  send("listModels", { endpoint: state.awareness.endpoint });
+}
+function fillModels(list, error) {
+  const sel = el("aModel");
+  if (!list || !list.length) {
+    sel.innerHTML = '<option value="">nothing found</option>';
+    el("aOut").textContent = error ? ("no models: " + error) : "Ollama answered with no models. Try `ollama pull gemma3:1b`.";
+    return;
+  }
+  /* embedding models cannot hold a conversation — never offer them */
+  const chatty = list.filter(m => !/embed/i.test(m.name || ""));
+  const sorted = (chatty.length ? chatty : list).slice().sort((a, b) => (a.size || 0) - (b.size || 0));
+  sel.innerHTML = sorted.map(m =>
+    '<option value="' + m.name + '">' + m.name + (m.size ? "  ·  " + (m.size / 1e9).toFixed(1) + " GB" : "") + '</option>').join("");
+  if (!state.awareness.model || !sorted.some(m => m.name === state.awareness.model)) {
+    state.awareness.model = sorted[0].name;   /* smallest is the sensible default */
+    save();
+  }
+  sel.value = state.awareness.model;
+  el("aOut").textContent = sorted.length + " model(s) available.";
+}
+
+el("bPhrases").oninput = e => {
+  state.behavior.phrases = e.target.value.split("\n").map(s => s.trim()).filter(Boolean).slice(0, 40);
+  save();
+};
+
+function renderControls() {
+  el("name").value = state.name;
+  const c = CB.resolveColors(state.look.colors);
+  el("cBody").value = c.body; el("cShade").value = c.shade; el("cLight").value = c.light; el("cDark").value = c.dark;
+  el("pinShade").checked = !!state.look.colors.pinShade;
+  el("pinLight").checked = !!state.look.colors.pinLight;
+  const set = (id, v, fmt) => { el(id).value = v; if (el(id + "V")) el(id + "V").textContent = fmt(v); };
+  set("lScale", state.look.scale, v => v + "×");
+  set("lOpacity", state.look.opacity == null ? 1 : state.look.opacity, v => Math.round(v * 100) + "%");
+  set("bEnergy", state.behavior.energy, v => Math.round(v * 100) + "%");
+  set("bWalk", state.behavior.walkSpeed, v => v + " px/s");
+  set("bRun", state.behavior.runSpeed, v => v + " px/s");
+  set("bGravity", state.behavior.gravity, v => String(v));
+  set("bEdge", state.behavior.edgeMargin, v => v + " px");
+  set("bSleep", state.behavior.sleepAfter, v => v === 0 ? "never" : v + " s");
+  el("lShadow").checked = !!state.look.shadow;
+  el("bTop").checked = state.behavior.alwaysOnTop !== false;
+  el("bFollow").checked = !!state.behavior.followCursor;
+  el("bClick").checked = state.behavior.clickReact !== false;
+  el("bSpeech").checked = state.behavior.speech !== false;
+  el("bPhrases").value = (state.behavior.phrases || []).join("\n");
+  el("bBall").checked = state.behavior.playBall !== false;
+  el("bProps").checked = state.behavior.useProps !== false;
+  el("bNight").checked = state.behavior.nightMode !== false;
+  el("bestKeepies").textContent = (state.stats && state.stats.bestKeepies) || 0;
+  const aw = state.awareness || {};
+  el("aOn").checked = !!aw.enabled;
+  el("aEndpoint").value = aw.endpoint || "http://localhost:11434";
+  el("aApp").checked = aw.seeApp !== false;
+  el("aIdle").checked = aw.seeIdle !== false;
+  el("aTime").checked = aw.seeTime !== false;
+  el("aPersona").value = aw.persona || "";
+  set("aGap", aw.minGap || 150, v => v + " s");
+  if (aw.model) el("aModel").innerHTML = '<option value="' + aw.model + '">' + aw.model + '</option>';
+  el("aTitle").checked = !!aw.seeTitle;
+  el("bTalk").checked = state.behavior.talkOnClick !== false;
+  renderReactions();
+  send("accessibilityStatus");
+  players[1].opts.scale = (state.look.scale || 3) * 2;
+}
+
+function renderAll() { renderControls(); renderCards(); drawSwatches(); syncEditor(); }
+renderAll();
+send("ready");
+</script>
+</body>
+</html>
