@@ -610,12 +610,16 @@ document.querySelectorAll("[data-act]").forEach(b => b.onclick = () => {
   else if (a === "refreshModels") refreshModels();
   else if (a === "testModel") {
     el("aOut").textContent = "asking " + (state.awareness.model || "…nothing selected") + "…";
+    const moves = Object.keys(anims).filter(k => ["idle","walk","run","sleep","held","fall","land"].indexOf(k) < 0);
     send("askModel", {
-      id: "test", endpoint: state.awareness.endpoint, model: state.awareness.model, timeoutMs: 40000,
-      system: state.awareness.persona + " You answer only with a small JSON object.",
-      prompt: 'Right now: they just switched to a code editor; it is ' +
+      id: "test", endpoint: state.awareness.endpoint, model: state.awareness.model,
+      timeoutMs: 40000, temperature: 0.9, maxTokens: 60,
+      schema: { type: "object", properties: { say: { type: "string" }, do: { type: "string", enum: moves } },
+                required: ["say", "do"] },
+      system: state.awareness.persona + " Keep every reply to at most seven lowercase words.",
+      prompt: "They just switched to a code editor. It is " +
         new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) +
-        '.\nReply with JSON only: {"say": "<at most 7 words, lowercase, no questions>", "do": "<one of: wave, dance, work, think, jump, flip, drink>"}'
+        ". Say one short thing about it, and pick a move."
     });
   }
   else if (a === "resetColors") { state.look.colors = Object.assign({}, CB.DEFAULT_COLORS); save(); renderAll(); }

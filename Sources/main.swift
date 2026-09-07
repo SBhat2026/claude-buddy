@@ -96,9 +96,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                 let parts = ask.split(separator: "|", maxSplits: 1).map(String.init)
                 Timer.scheduledTimer(withTimeInterval: 3, repeats: false) { [weak self] _ in
                     self?.askModel(["id": "dbg", "view": "pet", "endpoint": parts.first ?? "",
-                                    "model": parts.count > 1 ? parts[1] : "", "timeoutMs": 20000.0,
-                                    "system": "You are a pixel creature.",
-                                    "prompt": "Reply with JSON only: {\"say\":\"..\",\"do\":\"wave\"}"])
+                                    "model": parts.count > 1 ? parts[1] : "", "timeoutMs": 90000.0,
+                                    "system": "You are a small pixel creature. At most seven lowercase words.",
+                                    "prompt": "They just switched to Safari. Say one short thing, and pick a move.",
+                                    "schema": ["type": "object",
+                                               "properties": ["say": ["type": "string"],
+                                                              "do": ["type": "string", "enum": ["wave", "dance", "think"]]],
+                                               "required": ["say", "do"]]])
                 }
             }
             Timer.scheduledTimer(withTimeInterval: 8.4, repeats: false) { [weak self] _ in
