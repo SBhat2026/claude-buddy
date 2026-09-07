@@ -117,6 +117,7 @@ window.__onNative = function (msg) {
     rebuildPlatforms();
   }
   else if (msg.type === "modelReply") onModelReply(msg);
+  else if (msg.type === "models") adoptModel(msg.list);
 };
 
 let hadState = false;
@@ -598,9 +599,36 @@ function onModelReply(msg) {
    the model has loaded and if you never set one up. Anything else is a question,
    and goes to whatever small local model is configured. */
 
-const talk = { open: false, pending: null, seq: 0, history: [], closeAt: 0 };
+const talk = { open: false, pending: null, seq: 0, history: [], closeAt: 0, lastAsked: "" };
+
+/* What he says when there is no model, or the model did not come back. Not an
+   error message — an answer. */
+const SHRUGS = ["hm", "no idea, but ok", "if you say so", "sure", "go on then",
+                "i was thinking that too", "probably", "one sec… no, gone",
+                "you'd know better", "mm"];
+const GREETINGS = ["hello", "hey", "hi", "there you are"];
+
+function fallbackReply(text) {
+  const t = String(text || "").toLowerCase();
+  if (!t) return SHRUGS[(Math.random() * SHRUGS.length) | 0];
+  if (/^(hi|hey|hello|yo|sup|morning|evening)\b/.test(t)) return GREETINGS[(Math.random() * GREETINGS.length) | 0];
+  if (/\b(thanks|thank you|good|nice|love|well done)\b/.test(t)) {
+    heart(pet.x, pet.y - window.CB.GRID * scale() - 6);
+    return "🙂";
+  }
+  if (/\b(sorry|sad|tired|stressed|stuck)\b/.test(t)) return "take a break";
+  if (/\b(who|what|why|how|when|where)\b/.test(t) || t.endsWith("?")) return "hm, ask me again in a bit";
+  if (/\b(you|your)\b/.test(t)) return "that's me";
+  return SHRUGS[(Math.random() * SHRUGS.length) | 0];
+}
+
+function pickMove() {
+  const pool = (state.rotation || []).filter(k => anims[k]);
+  return pool.length ? pool[(Math.random() * pool.length) | 0] : "think";
+}
 
 const COMMANDS = [
+  { re: /\b(good|nice|well done|thanks|love)\b/,        run: () => { heart(pet.x, pet.y - window.CB.GRID * scale() - 6); setAction("wave", 3); return "🙂"; } },
   { re: /\b(dance|boogie|party)\b/,                     run: () => { setAction("dance", 6); return "🙂"; } },
   { re: /\b(sleep|nap|bed|goodnight|good night)\b/,     run: () => { putAwayBall(); setAction("sleep", 9999); return "night"; } },
   { re: /\b(wake|morning|get up)\b/,                    run: () => { setAction("idle", 1); return "morning"; } },
@@ -619,7 +647,6 @@ const COMMANDS = [
   { re: /\b(quiet|shh|hush|shut)\b/,                    run: () => { state.behavior.speech = false; persist(); return "…"; } },
   { re: /\b(talk|speak|noisy)\b/,                       run: () => { state.behavior.speech = true; persist(); return "back"; } },
   { re: /\b(hide|go away|leave)\b/,                     run: () => { send("hidePet"); return "bye"; } },
-  { re: /\b(good|nice|well done|thanks|love)\b/,        run: () => { heart(pet.x, pet.y - window.CB.GRID * scale() - 6); setAction("wave", 3); return "🙂"; } },
   { re: /\b(goal|net|posts)\b/,                         run: () => { putUpGoal(); return "putting it up"; } },
   { re: /\b(drone|fly|quadcopter)\b/,                   run: () => { flyDrone(); return "launching"; } },
   { re: /\b(dog|pet|puppy|walk him|walk it)\b/,          run: () => { walkTheDog(); return "come on then"; } },
@@ -668,14 +695,20 @@ function submitTalk() {
 
   const a = state.awareness || {};
   if (!a.model) {
-    say("try: dance · ball · come · flip · sleep", 5);
+    /* No model chosen yet — answer now, and go and find one for next time. */
+    say(fallbackReply(text), 4.5);
+    setAction(pickMove(), 3);
+    send("listModels", { endpoint: a.endpoint || "http://localhost:11434" });
     return;
   }
   say("…", 30);
   const id = "t" + (++talk.seq);
   talk.pending = id;
+  talk.lastAsked = text;
   const recent = talk.history.slice(-2).map(h => "They said: " + h.q + " You said: " + h.a).join(" ");
   talk.history.push({ q: text, a: "" });
+  /* If the answer never arrives at all, he still answers. */
+  setTimeout(() => { if (talk.pending === id) onTalkReply({ id: id, ok: false }); }, 45000);
   send("askModel", {
     id: id, endpoint: a.endpoint, model: a.model, timeoutMs: 40000, temperature: 0.8, maxTokens: 90,
     schema: replySchema(20),
@@ -687,10 +720,12 @@ function submitTalk() {
 
 function onTalkReply(msg) {
   talk.pending = null;
-  if (!msg.ok) { say("…the model didn't answer", 3); return; }
+  /* Whatever went wrong — a busy GPU, a model that answered in punctuation — he
+     still says something. Being spoken to and ignored is the one outcome worth
+     engineering away. */
+  if (!msg.ok) { say(fallbackReply(talk.lastAsked), 4); setAction(pickMove(), 3); return; }
   const obj = parseReply(msg.text);
-  if (!obj) { say("…", 2); return; }
-  const line = clean(obj.say, 120) || "hm";
+  const line = clean(obj && obj.say, 120) || fallbackReply(talk.lastAsked);
   if (talk.history.length) talk.history[talk.history.length - 1].a = line;
   say(line, Math.min(9, 2.5 + line.length / 18));
   if (obj.do && anims[obj.do]) setAction(obj.do, 3);
@@ -842,6 +877,18 @@ function celebrate(key) {
     setTimeout(() => heart(pet.x + (Math.random() * 40 - 20), pet.y - window.CB.GRID * scale() - 6), i * 260);
   }
   say(matched ? "you made it! " + matched.text + "!" : "a new one! thank you", 6);
+}
+
+/* If Ollama is running and nothing has been chosen, he chooses: the smallest model
+   that can hold a conversation. Embedding models are not those. */
+function adoptModel(list) {
+  const a = state.awareness || {};
+  if (a.model || !Array.isArray(list) || !list.length) return;
+  const chatty = list.filter(m => m.name && !/embed/i.test(m.name));
+  if (!chatty.length) return;
+  chatty.sort((x, y) => (x.size || 0) - (y.size || 0));
+  state.awareness.model = chatty[0].name;
+  persist();
 }
 
 /* ---------- pointer ---------- */
@@ -1133,6 +1180,10 @@ function place() {
 }
 
 send("ready");
+setTimeout(() => {
+  const a = state.awareness || {};
+  if (!a.model) send("listModels", { endpoint: a.endpoint || "http://localhost:11434" });
+}, 1500);
 requestAnimationFrame(tick);
 </script>
 </body>

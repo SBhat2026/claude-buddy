@@ -88,6 +88,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         NotificationCenter.default.addObserver(self, selector: #selector(screensChanged),
             name: NSApplication.didChangeScreenParametersNotification, object: nil)
         if CommandLine.arguments.contains("--studio") { openStudio() }
+
+        // He is shipped with the shelves switched on, and they are the one feature
+        // that cannot work without being asked for. So ask, once, shortly after
+        // launch — never silently, and never again in this run.
+        if wantsTitles(), !AXIsProcessTrusted() {
+            Timer.scheduledTimer(withTimeInterval: 2.5, repeats: false) { [weak self] _ in
+                guard let self = self, !AXIsProcessTrusted() else { return }
+                dlog("asking for accessibility")
+                _ = self.axTrusted(prompting: true)
+                self.command(["cmd": "say", "text": "tick me in settings\nand i can use your toolbars"])
+            }
+        }
         if DEBUG, let path = ProcessInfo.processInfo.environment["CBSNAP"] {
             if let demo = ProcessInfo.processInfo.environment["CBDEMO"] {
                 for (i, one) in demo.split(separator: ",").enumerated() {
