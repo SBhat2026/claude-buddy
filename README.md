@@ -1,7 +1,8 @@
 # Claude Buddy
 
-A small pixel figure that lives on your desktop. He walks along the bottom of the
-screen on four skinny legs, wanders off on his own, takes a football out and knocks
+A small pixel figure that lives on your desktop. He walks the whole screen on four
+skinny legs — the floor, up the sides, upside down across the top, and along the top
+edge of whatever window you are actually working in — wanders off on his own, takes a football out and knocks
 it about, waves, dances, works at a tiny laptop, naps when you ignore him, and can be
 picked up and dropped. **Buddy Studio** is the app that comes with him: a
 gallery of his animations, a pixel editor for drawing new ones, and the dials for
@@ -26,7 +27,7 @@ System Settings → General → Login Items.
 | **Drag him** | pick him up anywhere on screen and drop him — he falls, bounces and lands |
 | **Double-click him** | opens Buddy Studio |
 | **Right-click him** | also opens the Studio |
-| **Click him** | he says "hmm?" and a line opens — type at him, Enter to send, Esc to close |
+| **Click him** | he says "hmm?" and a line opens — type one thing, Enter, and he answers and gets back to what he was doing |
 | **Double-click him** | backflip |
 | **Click him while he is playing** | he boots the ball |
 | **Menu bar icon** | Come Here · Do Something · Play Ball · Backflip · Sleep · Recentre · Next Display · Hide |
@@ -142,10 +143,53 @@ is what walks. That is why he can be dragged, thrown, and bounced without any of
 usual desktop-pet trickery, and why hit testing is just "is the pointer over the
 sprite".
 
+### The whole screen, not just the bottom of it
+
+He walks the floor, and when he reaches the side of the screen he often keeps going:
+up the wall, across the ceiling upside down, down the far side. He lets go now and
+then and falls, which is the same fall as being dropped.
+
+He is drawn rotated about the point his feet touch, so a quarter turn puts him on a
+wall rather than sliding him along one, and which way he faces flips with the turn —
+on the left wall "forward" is a different screen direction than on the right.
+
+**Your windows are ledges.** With Accessibility granted he is told where the
+frontmost window is, and its top edge becomes something he can jump onto and walk
+along. Move the window and he rides it; move it out from under him and he falls.
+Turn it off in Behaviour and he ignores your windows entirely.
+
+### Things he gets up to
+
+- **A goal.** He puts one up himself — posts, then the crossbar, then the net —
+  then takes shots at it. Kicks aim at the goal when there is one, and he keeps
+  count.
+- **A drone.** He launches it, stands there working the controls, and it flies a
+  lazy circuit above him before coming back down.
+- **His own pet.** A smaller one of him on a leash, which follows him about at a
+  polite distance and stops when he stops. The leash is drawn between them.
+
+Each has a switch in Behaviour, and each can be asked for by name in the talk line
+or from the menu bar.
+
+### He asks for things
+
+Now and then he asks for something — *"could i have a skateboard?"* — and it lands
+in the studio under **He has been asking for**, with a **Make it** button that opens
+the editor with that name already filled in.
+
+The point is that what he asks for is always something the editor that ships with
+him can produce. And he can tell when you have: the moment a new animation appears
+in his list he stops what he is doing, plays it, throws hearts, and thanks you by
+name — *"you made it! a skateboard!"* — then keeps it in his rotation like any other.
+He never asks for more than three things at once.
+
 ### Talking to him
 
-Clicking him opens a one-line prompt under his chin. Plain instructions never reach a
-model at all — *dance*, *play ball*, *come here*, *sleep*, *bigger*, *slower*,
+Clicking him opens a one-line prompt under his chin. One question, one answer: the
+line closes on Enter and he goes back to what he was doing rather than standing
+there with a cursor blinking at you. Click him again to say something else.
+
+Plain instructions never reach a model at all — *dance*, *play ball*, *come here*, *sleep*, *bigger*, *slower*,
 *quiet*, *flip* and a dozen more are matched directly, so he is useful before any
 model is set up and instantly when one is. Anything else is passed to the local model
 along with what he can see, and he answers in the bubble.

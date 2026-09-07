@@ -121,6 +121,21 @@ const PROPS = {
   heart: { size: 8, frames: [
     ["........", ".rr.rr..", "rrrrrrr.", "rrrrrrr.", ".rrrrr..", "..rrr...", "...r....", "........"]
   ]},
+  /* built in three stages, so you see him put it up */
+  /* Dark frame rather than the white a real goal has: white posts disappear into a
+     pale desktop, and dark is the weight his own outline already carries. */
+  goal: { size: 16, frames: [
+    ["k..............k", "k..............k", "k..............k", "k..............k",
+     "k..............k", "k..............k", "k..............k"],
+    ["kkkkkkkkkkkkkkkk", "k..............k", "k..............k", "k..............k",
+     "k..............k", "k..............k", "k..............k"],
+    ["kkkkkkkkkkkkkkkk", "k.d...d...d...dk", "k...d...d...d..k", "k.d...d...d...dk",
+     "k...d...d...d..k", "k.d...d...d...dk", "k..............k"]
+  ]},
+  drone: { size: 8, frames: [
+    ["........", "d......d", ".dd..dd.", "..kkkk..", "..kwwk..", "...kk...", "........", "........"],
+    ["........", ".d....d.", "dd.dd.dd", "..kkkk..", "..kwwk..", "...kk...", "........", "........"]
+  ]},
   puff: { size: 8, frames: [
     ["........", "........", "...dd...", "..d..d..", ".d....d.", "........", "........", "........"],
     ["........", "..d...d.", ".d.....d", "d.......", "......d.", "........", "........", "........"]
@@ -132,12 +147,14 @@ function drawProp(ctx, name, frameIndex, o) {
   if (!prop) return;
   const rows = prop.frames[Math.abs(frameIndex | 0) % prop.frames.length];
   const s = o.scale || 3;
-  const x0 = o.cx - (prop.size * s) / 2;
-  const y0 = o.cy - (prop.size * s) / 2;
+  const h = rows.length, w = rows[0].length;
+  const x0 = o.cx - (w * s) / 2;
+  const y0 = o.baseY != null ? o.baseY - h * s : o.cy - (h * s) / 2;
   ctx.save();
   if (o.alpha != null) ctx.globalAlpha = o.alpha;
-  for (let y = 0; y < prop.size; y++) {
-    for (let x = 0; x < prop.size; x++) {
+  if (o.flip) { ctx.translate(o.cx * 2, 0); ctx.scale(-1, 1); }
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
       const ch = rows[y][x];
       if (!ch || ch === ".") continue;
       const col = PROP_PALETTE[ch];
@@ -149,6 +166,27 @@ function drawProp(ctx, name, frameIndex, o) {
   ctx.restore();
 }
 
+
+/* ---------- things he would like ----------
+   He asks for one of these now and then. The point is not the list — it is that
+   what he asks for is answerable in the editor that ships with him, so "can I have
+   a skateboard" is a thing you can actually go and make, and he can tell when you
+   have. */
+
+const WISH_POOL = [
+  { text: "a skateboard", kind: "animation" },
+  { text: "a tiny hat", kind: "animation" },
+  { text: "an umbrella", kind: "animation" },
+  { text: "a fishing rod", kind: "animation" },
+  { text: "a guitar", kind: "animation" },
+  { text: "a plant to water", kind: "animation" },
+  { text: "a paintbrush", kind: "animation" },
+  { text: "a swimming animation", kind: "animation" },
+  { text: "somewhere to sit down", kind: "animation" },
+  { text: "a sleeping bag", kind: "animation" },
+  { text: "a second ball in another colour", kind: "prop" },
+  { text: "a cartwheel", kind: "animation" }
+];
 
 /* ---------- the ball ----------
    Everything else here is drawn on his 16x16 grid. The ball is not: a football
@@ -281,6 +319,13 @@ function drawFrame(ctx, frame, opts) {
   const y0 = opts.baseY - (GRID * scale) + bob * scale;
   ctx.save();
   if (opts.alpha != null) ctx.globalAlpha = opts.alpha;
+  // Rotation is about the point his feet touch, so a quarter turn puts him on a
+  // wall rather than sliding him off one.
+  if (opts.angle) {
+    ctx.translate(opts.cx, opts.baseY);
+    ctx.rotate(opts.angle);
+    ctx.translate(-opts.cx, -opts.baseY);
+  }
   if (flip === -1) { ctx.translate(opts.cx * 2, 0); ctx.scale(-1, 1); }
   for (let y = 0; y < GRID; y++) {
     const row = frame[y] || "";
@@ -338,7 +383,13 @@ const DEFAULT_STATE = {
     playBall: true,        /* he takes a ball out and knocks it about       */
     useProps: true,        /* laptop while working, mug on a coffee break   */
     nightMode: true,       /* dozes off sooner in the small hours           */
-    talkOnClick: true      /* click him and type at him                      */
+    talkOnClick: true,     /* click him and type at him                      */
+    climbEdges: true,      /* up the sides of the screen and across the top  */
+    useWindows: true,      /* stands on the top edge of your frontmost window */
+    buildGoal: true,       /* puts up a goal and takes shots at it           */
+    flyDrone: true,
+    walkPet: true,         /* takes his own small pet out                    */
+    proposeIdeas: true     /* asks for things for you to make                */
   },
 
   /* What he does about whatever you are doing. First match wins; `match` is a
@@ -364,7 +415,8 @@ const DEFAULT_STATE = {
     seeIdle: true,
     seeTime: true
   },
-  stats: { bestKeepies: 0 },
+  stats: { bestKeepies: 0, goals: 0, gifts: 0, happiness: 0.5 },
+  wishes: [],
   rotation: DEFAULT_ROTATION.slice(),
   animations: {}          /* overrides of built-ins + custom animations    */
 };
@@ -379,6 +431,7 @@ function mergeState(saved) {
   if (Array.isArray(saved.behavior && saved.behavior.phrases)) s.behavior.phrases = saved.behavior.phrases.slice(0, 40);
   if (Array.isArray(saved.rotation)) s.rotation = saved.rotation.slice();
   if (Array.isArray(saved.reactions)) s.reactions = saved.reactions.slice(0, 40);
+  if (Array.isArray(saved.wishes)) s.wishes = saved.wishes.slice(0, 30);
   Object.assign(s.awareness, saved.awareness || {});
   Object.assign(s.stats, saved.stats || {});
   s.animations = {};
@@ -408,7 +461,7 @@ function blankFrame() { return normalizeFrame([]); }
 if (typeof window !== "undefined") {
   window.CB = {
     GRID, F, DEFAULT_ANIMATIONS, DEFAULT_ROTATION, DEFAULT_COLORS, DEFAULT_STATE, REQUIRED,
-    FOOT_ROW, PROPS, PROP_PALETTE, drawProp, drawBall, BALL_COLORS, normalizeAnim, normalizeFrame, blankFrame, drawFrame, drawShadow, drawStanding,
+    FOOT_ROW, PROPS, PROP_PALETTE, WISH_POOL, drawProp, drawBall, BALL_COLORS, normalizeAnim, normalizeFrame, blankFrame, drawFrame, drawShadow, drawStanding,
     paletteFor, resolveColors, mergeState, animationsOf, mix, hexToRgb, rgbToHex
   };
 }

@@ -93,6 +93,9 @@
       <button data-cmd="come">Come here</button>
       <button data-cmd="jump">Jump</button>
       <button data-cmd="ball">Play ball</button>
+      <button data-cmd="goal">Goal</button>
+      <button data-cmd="drone">Drone</button>
+      <button data-cmd="dog">Walk pet</button>
       <button data-cmd="flip">Backflip</button>
       <button data-cmd="sleep">Sleep</button>
       <button data-cmd="center">Recentre</button>
@@ -110,6 +113,11 @@
 
   <main>
     <section id="tab-anims">
+      <div class="panel" id="wishPanel" hidden>
+        <h3>He has been asking for</h3>
+        <div id="wishList"></div>
+        <div class="hint">Make one and he will notice the moment you save it.</div>
+      </div>
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
         <button class="primary" id="newAnim">+ New animation</button>
         <span class="hint" style="margin:0">Ticked animations go into the rotation he picks from on his own.</span>
@@ -219,7 +227,14 @@
           <div class="field"><label>Play with a ball</label><input type="checkbox" id="bBall"></div>
           <div class="field"><label>Use props (laptop, mug)</label><input type="checkbox" id="bProps"></div>
           <div class="field"><label>Wind down at night</label><input type="checkbox" id="bNight"></div>
-          <div class="hint">Best run of keepie-uppies: <b id="bestKeepies">0</b></div>
+          <div class="field"><label>Climb the screen edges</label><input type="checkbox" id="bClimb"></div>
+          <div class="field"><label>Stand on your windows</label><input type="checkbox" id="bWindows"></div>
+          <div class="field"><label>Put up a goal</label><input type="checkbox" id="bGoal"></div>
+          <div class="field"><label>Fly a drone</label><input type="checkbox" id="bDrone"></div>
+          <div class="field"><label>Walk his own pet</label><input type="checkbox" id="bDog"></div>
+          <div class="field"><label>Ask for things to be made</label><input type="checkbox" id="bWish"></div>
+          <div class="hint">Keepie-uppies <b id="bestKeepies">0</b> · goals <b id="goalCount">0</b> ·
+            things you made him <b id="giftCount">0</b></div>
           <div class="field"><label>Sleep after</label><input type="range" id="bSleep" min="0" max="600" step="10"><span class="val" id="bSleepV"></span></div>
           <div class="hint">Sleep after 0 means he never naps.</div>
           <h3 style="margin-top:16px">Things he says</h3>
@@ -684,6 +699,48 @@ el("bSpeech").onchange = e => { state.behavior.speech = e.target.checked; save()
 el("bBall").onchange = e => { state.behavior.playBall = e.target.checked; save(); };
 el("bProps").onchange = e => { state.behavior.useProps = e.target.checked; save(); };
 el("bNight").onchange = e => { state.behavior.nightMode = e.target.checked; save(); };
+el("bClimb").onchange = e => { state.behavior.climbEdges = e.target.checked; save(); };
+el("bWindows").onchange = e => { state.behavior.useWindows = e.target.checked; save(true); if (e.target.checked) send("requestAccessibility"); };
+el("bGoal").onchange = e => { state.behavior.buildGoal = e.target.checked; save(); };
+el("bDrone").onchange = e => { state.behavior.flyDrone = e.target.checked; save(); };
+el("bDog").onchange = e => { state.behavior.walkPet = e.target.checked; save(); };
+el("bWish").onchange = e => { state.behavior.proposeIdeas = e.target.checked; save(); };
+
+/* What he has asked for, and the shortest path from asking to having. */
+function renderWishes() {
+  const pending = (state.wishes || []).filter(w => !w.granted);
+  const made = (state.wishes || []).filter(w => w.granted);
+  el("wishPanel").hidden = !(pending.length || made.length);
+  const list = el("wishList");
+  list.innerHTML = "";
+  for (const w of pending) {
+    const row = document.createElement("div");
+    row.className = "field";
+    row.innerHTML = '<label style="width:auto;flex:1">“Could I have ' + w.text + '?”</label>' +
+      '<button class="primary" data-make="' + w.id + '">Make it</button>' +
+      '<button data-drop="' + w.id + '">No</button>';
+    list.appendChild(row);
+  }
+  if (made.length) {
+    const done = document.createElement("div");
+    done.className = "hint";
+    done.textContent = "Made already: " + made.map(w => w.text).join(", ");
+    list.appendChild(done);
+  }
+  list.querySelectorAll("[data-make]").forEach(b => b.onclick = () => {
+    const w = (state.wishes || []).find(x => x.id === b.dataset.make);
+    if (!w) return;
+    draft = CB.normalizeAnim({ name: w.text, fps: 6, loop: true, frames: [CB.blankFrame()] });
+    draftKey = null; frameIndex = 0;
+    document.querySelector('nav button[data-tab="editor"]').click();
+    syncEditor();
+    hint('Draw “' + w.text + '”, then Save — he is watching for it.');
+  });
+  list.querySelectorAll("[data-drop]").forEach(b => b.onclick = () => {
+    state.wishes = (state.wishes || []).filter(x => x.id !== b.dataset.drop);
+    save(true); renderWishes();
+  });
+}
 el("aOn").onchange = e => { state.awareness.enabled = e.target.checked; save(true); if (e.target.checked) refreshModels(); };
 el("aEndpoint").oninput = e => { state.awareness.endpoint = e.target.value.trim(); save(); };
 el("aModel").onchange = e => { state.awareness.model = e.target.value; save(true); };
@@ -778,6 +835,15 @@ function renderControls() {
   el("bProps").checked = state.behavior.useProps !== false;
   el("bNight").checked = state.behavior.nightMode !== false;
   el("bestKeepies").textContent = (state.stats && state.stats.bestKeepies) || 0;
+  el("goalCount").textContent = (state.stats && state.stats.goals) || 0;
+  el("giftCount").textContent = (state.stats && state.stats.gifts) || 0;
+  el("bClimb").checked = state.behavior.climbEdges !== false;
+  el("bWindows").checked = state.behavior.useWindows !== false;
+  el("bGoal").checked = state.behavior.buildGoal !== false;
+  el("bDrone").checked = state.behavior.flyDrone !== false;
+  el("bDog").checked = state.behavior.walkPet !== false;
+  el("bWish").checked = state.behavior.proposeIdeas !== false;
+  renderWishes();
   const aw = state.awareness || {};
   el("aOn").checked = !!aw.enabled;
   el("aEndpoint").value = aw.endpoint || "http://localhost:11434";

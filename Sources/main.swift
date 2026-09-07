@@ -57,6 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     var lastWindowTitle: String = ""
     var lastContextSent: Date = .distantPast
     var appBeforeTalking: NSRunningApplication?
+    var lastLedge: [String: CGFloat]?
 
     var resourcesURL: URL {
         if let r = Bundle.main.resourceURL,
@@ -88,8 +89,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         if CommandLine.arguments.contains("--studio") { openStudio() }
         if DEBUG, let path = ProcessInfo.processInfo.environment["CBSNAP"] {
             if let demo = ProcessInfo.processInfo.environment["CBDEMO"] {
-                Timer.scheduledTimer(withTimeInterval: 5, repeats: false) { [weak self] _ in
-                    self?.command(["cmd": demo, "seconds": 40])
+                for (i, one) in demo.split(separator: ",").enumerated() {
+                    Timer.scheduledTimer(withTimeInterval: 4 + Double(i) * 0.4, repeats: false) { [weak self] _ in
+                        self?.command(["cmd": String(one), "seconds": 40])
+                    }
                 }
             }
             if let ask = ProcessInfo.processInfo.environment["CBASK"] {
@@ -223,6 +226,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         menu.addItem(withTitle: "Do Something", action: #selector(menuTrick), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Play Ball", action: #selector(menuBall), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Backflip", action: #selector(menuFlip), keyEquivalent: "").target = self
+        menu.addItem(withTitle: "Put Up a Goal", action: #selector(menuGoal), keyEquivalent: "").target = self
+        menu.addItem(withTitle: "Fly the Drone", action: #selector(menuDrone), keyEquivalent: "").target = self
+        menu.addItem(withTitle: "Walk His Pet", action: #selector(menuDog), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Sleep", action: #selector(menuSleep), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Recentre", action: #selector(menuCentre), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Next Display", action: #selector(menuNextDisplay), keyEquivalent: "").target = self
@@ -259,6 +265,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     @objc func menuSleep() { command(["cmd": "sleep"]) }
     @objc func menuBall() { command(["cmd": "ball", "seconds": 30]) }
     @objc func menuFlip() { command(["cmd": "flip"]) }
+    @objc func menuGoal() { command(["cmd": "goal"]) }
+    @objc func menuDrone() { command(["cmd": "drone"]) }
+    @objc func menuDog() { command(["cmd": "dog"]) }
     @objc func menuCentre() { command(["cmd": "center"]) }
     @objc func menuQuit() { NSApp.terminate(nil) }
     @objc func menuTrick() {
@@ -472,18 +481,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         return AXIsProcessTrustedWithOptions([key: prompting] as CFDictionary)
     }
 
-    /// The title of the frontmost window of another app. Needs Accessibility; without
-    /// it this returns nil rather than failing, and he simply knows less.
-    func frontWindowTitle(pid: pid_t) -> String? {
+    /// The frontmost window of another app: its title, and where it is on screen.
+    /// Needs Accessibility; without it this returns nothing rather than failing, and
+    /// he simply knows less.
+    func frontWindow(pid: pid_t) -> (title: String, rect: NSRect?)? {
         guard AXIsProcessTrusted() else { return nil }
         let app = AXUIElementCreateApplication(pid)
         var windowRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute as CFString, &windowRef) == .success,
-              let window = windowRef else { return nil }
+              let windowAny = windowRef else { return nil }
+        let window = windowAny as! AXUIElement
+
+        var title = ""
         var titleRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(window as! AXUIElement, kAXTitleAttribute as CFString, &titleRef) == .success
-        else { return nil }
-        return (titleRef as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &titleRef) == .success,
+           let t = titleRef as? String {
+            title = t.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        // Accessibility already reports window geometry top-left-origin, which is the
+        // space the web side works in — no flipping needed here, unlike NSScreen.
+        var origin = CGPoint.zero, size = CGSize.zero
+        var posRef: CFTypeRef?, sizeRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(window, kAXPositionAttribute as CFString, &posRef) == .success,
+              AXUIElementCopyAttributeValue(window, kAXSizeAttribute as CFString, &sizeRef) == .success,
+              AXValueGetValue(posRef as! AXValue, .cgPoint, &origin),
+              AXValueGetValue(sizeRef as! AXValue, .cgSize, &size)
+        else { return (title, nil) }
+        return (title, NSRect(origin: origin, size: size))
     }
 
     func wantsTitles() -> Bool {
@@ -518,15 +543,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             let idle = CGEventSource.secondsSinceLastEventType(.combinedSessionState,
                                                                eventType: CGEventType(rawValue: ~0)!)
             var title = ""
+            var windowRect: [String: CGFloat]? = nil
             if !mine, self.wantsTitles(), let pid = front?.processIdentifier,
-               let t = self.frontWindowTitle(pid: pid) { title = String(t.prefix(140)) }
+               let w = self.frontWindow(pid: pid) {
+                title = String(w.title.prefix(140))
+                // The ledge he can climb onto: a real window's real top edge.
+                if let r = w.rect, r.width > 120, r.height > 80 {
+                    windowRect = ["x": r.minX, "y": r.minY, "w": r.width, "h": r.height]
+                }
+            }
+            let ledgeMoved = self.lastLedge?["x"] != windowRect?["x"] || self.lastLedge?["y"] != windowRect?["y"]
+                || self.lastLedge?["w"] != windowRect?["w"]
             let changed = !mine && (name != self.lastFrontApp || title != self.lastWindowTitle)
-            if !mine { self.lastFrontApp = name; self.lastWindowTitle = title }
-            if changed || Date().timeIntervalSince(self.lastContextSent) > 20 {
+            if !mine { self.lastFrontApp = name; self.lastWindowTitle = title; self.lastLedge = windowRect }
+            if changed || ledgeMoved || Date().timeIntervalSince(self.lastContextSent) > 20 {
                 self.lastContextSent = Date()
-                self.post(to: self.petView, ["type": "context", "app": self.lastFrontApp,
-                                             "title": self.lastWindowTitle, "changed": changed,
-                                             "idle": idle, "hour": Calendar.current.component(.hour, from: Date())])
+                var msg: [String: Any] = ["type": "context", "app": self.lastFrontApp,
+                                          "title": self.lastWindowTitle, "changed": changed,
+                                          "idle": idle, "hour": Calendar.current.component(.hour, from: Date())]
+                if let windowRect = windowRect { msg["window"] = windowRect }
+                self.post(to: self.petView, msg)
             }
         }
         RunLoop.main.add(contextTimer!, forMode: .common)

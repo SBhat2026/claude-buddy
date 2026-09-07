@@ -59,12 +59,24 @@ const talkInput = document.getElementById("talkInput");
 let state = window.CB.mergeState(null);
 let anims = window.CB.animationsOf(state);
 let palette = window.CB.paletteFor(state.look.colors);
+let miniPalette = window.CB.paletteFor({ body: "#d99a80" });
 
 let screenRect = { x: 0, y: 0, w: 1440, h: 860 };
 let mouse = { x: 0, y: 0, ok: false };
 
+/* Which way is up, and how far round he is turned, for each thing he can stand on.
+   His contact point is what x,y mean — the sprite is drawn rotated about it, so a
+   quarter turn puts his feet on a wall instead of sliding him along one. */
+const SURFACES = {
+  floor:   { up: { x: 0, y: -1 }, angle: 0,             axis: "x" },
+  ledge:   { up: { x: 0, y: -1 }, angle: 0,             axis: "x" },
+  left:    { up: { x: 1, y: 0 },  angle: Math.PI / 2,   axis: "y" },
+  right:   { up: { x: -1, y: 0 }, angle: -Math.PI / 2,  axis: "y" },
+  ceiling: { up: { x: 0, y: 1 },  angle: Math.PI,       axis: "x" }
+};
+
 const pet = {
-  x: 300, y: 700, vx: 0, vy: 0, facing: 1,
+  x: 300, y: 700, vx: 0, vy: 0, facing: 1, surface: "floor", dir: 1,
   action: "idle", frame: 0, frameT: 0, actionT: 0, hold: 2,
   target: null, dragging: false, grabDX: 0, grabDY: 0,
   lastInteraction: Date.now() / 1000, asleep: false
@@ -73,6 +85,10 @@ const pet = {
 /* the ball, and short-lived things like dust and hearts */
 let ball = null;
 let effects = [];
+let ledge = null;      /* the top edge of your frontmost window */
+let goal = null;       /* one he built himself                  */
+let drone = null;
+let mini = null;       /* his own small pet, on a leash          */
 let play = { until: 0, keepies: 0, sinceRest: 0 };
 
 let winX = -9999, winY = -9999, hovering = false, ignoring = true;
@@ -98,12 +114,20 @@ window.__onNative = function (msg) {
   else if (msg.type === "modelReply") onModelReply(msg);
 };
 
+let hadState = false;
 function applyState(raw) {
+  const before = Object.keys(anims || {});
   state = window.CB.mergeState(raw);
   anims = window.CB.animationsOf(state);
   palette = window.CB.paletteFor(state.look.colors);
+  const c = window.CB.resolveColors(state.look.colors);
+  miniPalette = window.CB.paletteFor({ body: window.CB.mix(c.body, "#ffffff", 0.22), dark: c.dark });
   if (!anims[pet.action]) setAction("idle");
   clampX();
+  /* Something new appeared in his animation list, which can only mean you drew it. */
+  const added = Object.keys(anims).filter(k => before.indexOf(k) < 0);
+  if (hadState && added.length) celebrate(added[0]);
+  hadState = true;
 }
 
 /* ---------- geometry ---------- */
@@ -113,6 +137,35 @@ const ground = () => screenRect.y + screenRect.h - 2;
 const minX = () => screenRect.x + (state.behavior.edgeMargin || 24);
 const maxX = () => screenRect.x + screenRect.w - (state.behavior.edgeMargin || 24);
 function clampX() { pet.x = Math.max(minX(), Math.min(maxX(), pet.x)); }
+const topY = () => screenRect.y + 24;
+const onGround = () => pet.surface === "floor" || pet.surface === "ledge";
+const surfaceDef = () => SURFACES[pet.surface] || SURFACES.floor;
+const surfaceY = () => (pet.surface === "ledge" && ledge ? ledge.y : ground());
+
+/* How far he can walk before he runs out of whatever he is standing on. */
+function surfaceBounds() {
+  switch (pet.surface) {
+    case "ledge": return ledge ? { min: ledge.x0 + 8, max: ledge.x1 - 8 } : { min: minX(), max: maxX() };
+    case "left": case "right": return { min: topY(), max: ground() };
+    default: return { min: minX(), max: maxX() };
+  }
+}
+
+function standOn(surface) {
+  pet.surface = surface;
+  pet.vx = pet.vy = 0;
+  if (surface === "left") pet.x = screenRect.x + 2;
+  if (surface === "right") pet.x = screenRect.x + screenRect.w - 2;
+  if (surface === "ceiling") pet.y = screenRect.y + 2;
+  if (surface === "floor") pet.y = ground();
+  if (surface === "ledge" && ledge) pet.y = ledge.y;
+}
+
+function letGo() {
+  pet.surface = "floor";
+  pet.vy = 20;
+  setAction("fall", 9999);
+}
 const toWinX = sx => CX + (sx - pet.x);
 const toWinY = sy => BASE_Y + (sy - pet.y);
 
@@ -203,7 +256,7 @@ function tryKick(dt) {
   const low = ball.y > ground() - 26 - scale() * 3;
   if (!near || !low) return;
   if (pet.action === "kick" && pet.actionT < 0.35) return;
-  const away = Math.sign(ball.x - pet.x) || pet.facing;
+  const away = goal ? (Math.sign(goal.x - pet.x) || pet.facing) : (Math.sign(ball.x - pet.x) || pet.facing);
   pet.facing = away;
   ball.vx = away * (60 + Math.random() * 110);
   ball.vy = -(180 + Math.random() * 200);
@@ -258,6 +311,25 @@ function decide() {
     return;
   }
 
+  /* now and then he asks you for something, or starts a project of his own */
+  if (onGround() && !busy()) {
+    const r0 = Math.random();
+    if (r0 < 0.05 && maybeWish()) return;
+    if (r0 < 0.11 && b.buildGoal !== false) { putUpGoal(); return; }
+    if (r0 < 0.16 && b.flyDrone !== false) { flyDrone(); return; }
+    if (r0 < 0.21 && b.walkPet !== false) { walkTheDog(); return; }
+    /* your own window is a ledge worth climbing onto */
+    if (r0 < 0.28 && b.useWindows !== false && ledge
+        && ledge.y < ground() - 60 && ledge.y > topY() + 20
+        && pet.x > ledge.x0 + 12 && pet.x < ledge.x1 - 12) {
+      pet.vy = -Math.sqrt(2 * (b.gravity || 1400) * (ground() - ledge.y + 30));
+      pet.y -= 1;
+      setAction("fall", 6);
+      if (Math.random() < 0.4) say("up here");
+      return;
+    }
+  }
+
   /* over half the time he simply gets on with whatever you are getting on with */
   const act = aware.activity;
   if (act && Math.random() < 0.55) {
@@ -292,6 +364,13 @@ function command(cmd, msg) {
   else if (cmd === "wake") { setAction("idle", 1); say("morning"); }
   else if (cmd === "say") say(msg.text || "hi", 3.4);
   else if (cmd === "flip") setAction("flip", 0.6);
+  else if (cmd === "goal") putUpGoal();
+  else if (cmd === "drone") flyDrone();
+  else if (cmd === "dog") walkTheDog();
+  else if (cmd === "climb") {
+    if (onGround()) { pet.target = Math.random() < 0.5 ? minX() : maxX(); setAction("walk", 14); }
+  }
+  else if (cmd === "wish") { if (!maybeWish()) say("i'm alright for now", 3); }
   else if (cmd === "center") { pet.x = screenRect.x + screenRect.w / 2; pet.y = ground(); setAction("land", 0.4); }
   else if (cmd === "jump") { pet.vy = -520; pet.y -= 1; setAction("fall", 4); }
 }
@@ -320,6 +399,19 @@ function onContext(ctx0) {
   const now = Date.now() / 1000;
   const appChanged = ctx0.app && ctx0.app !== aware.lastApp;
   const titleChanged = (ctx0.title || "") !== aware.lastTitle;
+
+  if (ctx0.window && state.behavior.useWindows !== false) {
+    const w = ctx0.window;
+    ledge = { x0: w.x, x1: w.x + w.w, y: w.y };
+    /* the window moved out from under him */
+    if (pet.surface === "ledge" && (pet.x < ledge.x0 + 4 || pet.x > ledge.x1 - 4 || Math.abs(pet.y - ledge.y) > 2)) {
+      if (Math.abs(pet.y - ledge.y) > 2 && pet.x > ledge.x0 && pet.x < ledge.x1) pet.y = ledge.y;
+      else letGo();
+    }
+  } else if (!ctx0.window) {
+    if (pet.surface === "ledge") letGo();
+    ledge = null;
+  }
 
   const hit = matchReaction(ctx0.app, a.seeTitle ? ctx0.title : "");
   aware.activity = hit;
@@ -450,7 +542,12 @@ const COMMANDS = [
   { re: /\b(talk|speak|noisy)\b/,                       run: () => { state.behavior.speech = true; persist(); return "back"; } },
   { re: /\b(hide|go away|leave)\b/,                     run: () => { send("hidePet"); return "bye"; } },
   { re: /\b(good|nice|well done|thanks|love)\b/,        run: () => { heart(pet.x, pet.y - window.CB.GRID * scale() - 6); setAction("wave", 3); return "🙂"; } },
-  { re: /\b(score|keepie|keepy|record)\b/,              run: () => "best: " + ((state.stats && state.stats.bestKeepies) || 0) }
+  { re: /\b(goal|net|posts)\b/,                         run: () => { putUpGoal(); return "putting it up"; } },
+  { re: /\b(drone|fly|quadcopter)\b/,                   run: () => { flyDrone(); return "launching"; } },
+  { re: /\b(dog|pet|puppy|walk him|walk it)\b/,          run: () => { walkTheDog(); return "come on then"; } },
+  { re: /\b(climb|wall|ceiling|edge)\b/,                run: () => { pet.target = Math.random() < 0.5 ? minX() : maxX(); setAction("walk", 14); return "up we go"; } },
+  { re: /\b(want|wish|like|need)\b/,                    run: () => { if (!maybeWish()) return "i'm alright"; return ""; } },
+  { re: /\b(score|keepie|keepy|record|goals)\b/,         run: () => "best " + ((state.stats && state.stats.bestKeepies) || 0) + " · " + ((state.stats && state.stats.goals) || 0) + " goals" }
 ];
 
 function persist() { send("saveState", { state: state }); }
@@ -480,8 +577,11 @@ function closeTalk() {
 function submitTalk() {
   const text = talkInput.value.trim();
   talkInput.value = "";
-  if (!text) { closeTalk(); return; }
-  talk.closeAt = Date.now() / 1000 + 25;
+  /* One question, one answer. He closes the line and gets on with his day rather
+     than standing there with a cursor blinking at you — click him again to say
+     something else. */
+  closeTalk();
+  if (!text) return;
   pet.lastInteraction = Date.now() / 1000;
 
   for (const c of COMMANDS) {
@@ -516,15 +616,155 @@ function onTalkReply(msg) {
   if (talk.history.length) talk.history[talk.history.length - 1].a = line;
   say(line, Math.min(9, 2.5 + line.length / 18));
   if (obj.do && anims[obj.do]) setAction(obj.do, 3);
-  talk.closeAt = Date.now() / 1000 + 20;
 }
 
 talkInput.addEventListener("keydown", e => {
   e.stopPropagation();
   if (e.key === "Enter") { e.preventDefault(); submitTalk(); }
   else if (e.key === "Escape") { e.preventDefault(); closeTalk(); }
-  talk.closeAt = Date.now() / 1000 + 25;
+  else talk.closeAt = Date.now() / 1000 + 25;
 });
+
+
+/* ---------- things he gets up to ----------
+   A goal he puts up himself, a drone he flies, and his own small pet on a leash.
+   All three are floor-only: he does not take the dog up a wall. */
+
+const goalScale = () => Math.max(2, scale() - 1);
+const goalW = () => 16 * goalScale();
+const goalH = () => 7 * goalScale();
+
+function putUpGoal() {
+  if (goal || !onGround()) return;
+  const dir = pet.facing || 1;
+  goal = {
+    x: Math.max(minX() + goalW(), Math.min(maxX() - goalW(), pet.x + dir * 130)),
+    y: ground(), stage: 0, t: 0, until: Date.now() / 1000 + 50
+  };
+  setAction("work", 2.4);
+  say("hold on", 2);
+}
+
+function updateGoal(dt) {
+  if (!goal) return;
+  goal.t += dt;
+  if (goal.stage < 2 && goal.t > 0.9 * (goal.stage + 1)) goal.stage++;
+  if (goal.stage === 2 && !ball && Date.now() / 1000 < goal.until - 6) {
+    takeOutBall();
+    play.until = goal.until;
+  }
+  if (ball && goal.stage === 2) {
+    const inMouth = Math.abs(ball.x - goal.x) < goalW() / 2 - 4 && ball.y > ground() - goalH();
+    if (inMouth && !ball.scored) {
+      ball.scored = true;
+      state.stats.goals = (state.stats.goals || 0) + 1;
+      say(["goal!", "get in", "" + state.stats.goals + " today"][(Math.random() * 3) | 0], 3);
+      heart(goal.x, ground() - goalH() - 10);
+      puff(ball.x, ground(), 2);
+      persist();
+      ball.vx = 0; ball.vy = -40;
+      setTimeout(() => { if (ball) { ball.x = pet.x + (pet.facing || 1) * 24; ball.scored = false; } }, 900);
+    }
+  }
+  if (Date.now() / 1000 > goal.until) { goal = null; putAwayBall(); }
+}
+
+function flyDrone() {
+  if (drone || !onGround()) return;
+  drone = { t: 0, alpha: 0, x: pet.x, y: ground() - 90, until: Date.now() / 1000 + 22 };
+  setAction("work", 3);
+  say("watch it go", 2.4);
+}
+
+function updateDrone(dt) {
+  if (!drone) return;
+  drone.t += dt;
+  const leaving = Date.now() / 1000 > drone.until;
+  drone.alpha = leaving ? drone.alpha - dt * 1.6 : Math.min(1, drone.alpha + dt * 2);
+  if (drone.alpha <= 0) { drone = null; return; }
+  const reach = 70 + 26 * Math.sin(drone.t * 0.6);
+  drone.x = pet.x + Math.cos(drone.t * 1.05) * reach;
+  drone.y = ground() - 96 - Math.sin(drone.t * 2.1) * 20 + (leaving ? 60 * (1 - drone.alpha) : 0);
+  if (!leaving && pet.action === "idle" && Math.random() < dt * 1.2) setAction("work", 3);
+}
+
+function walkTheDog() {
+  if (mini || !onGround()) return;
+  mini = {
+    x: pet.x - (pet.facing || 1) * 40, y: ground(), frame: 0, frameT: 0,
+    facing: pet.facing || 1, alpha: 0, moving: false, until: Date.now() / 1000 + 50
+  };
+  say("come on then", 2.4);
+}
+
+function updateMini(dt) {
+  if (!mini) return;
+  const leaving = Date.now() / 1000 > mini.until;
+  mini.alpha = leaving ? mini.alpha - dt * 1.5 : Math.min(1, mini.alpha + dt * 2);
+  if (mini.alpha <= 0) { mini = null; return; }
+  mini.y = ground();
+  const want = pet.x - (pet.facing || 1) * 36;
+  const d = want - mini.x;
+  if (Math.abs(d) > 4) {
+    const sp = Math.min(150, Math.abs(d) * 2.6);
+    mini.x += Math.sign(d) * sp * dt;
+    mini.facing = Math.sign(d);
+    mini.moving = true;
+  } else mini.moving = false;
+  const a = mini.moving ? anims.walk : anims.idle;
+  mini.frameT += dt;
+  const step = 1 / a.fps;
+  while (mini.frameT >= step) { mini.frameT -= step; mini.frame = (mini.frame + 1) % a.frames.length; }
+}
+
+const busy = () => Boolean(goal || drone || mini || isPlaying());
+
+/* ---------- things he would like you to make ----------
+   He asks rarely, never more than a few outstanding, and what he asks for is
+   always something the studio's editor can actually produce. */
+
+const wishes = { lastAsk: 0 };
+
+function pendingWishes() { return (state.wishes || []).filter(w => !w.granted); }
+
+function maybeWish() {
+  if (state.behavior.proposeIdeas === false) return false;
+  const now = Date.now() / 1000;
+  if (now - wishes.lastAsk < 1500) return false;
+  if (pendingWishes().length >= 3) return false;
+  const asked = new Set((state.wishes || []).map(w => w.text));
+  const pool = window.CB.WISH_POOL.filter(p => !asked.has(p.text));
+  if (!pool.length) return false;
+  const pick = pool[(Math.random() * pool.length) | 0];
+  state.wishes = (state.wishes || []).concat({
+    id: "w" + Date.now(), text: pick.text, kind: pick.kind, asked: Date.now(), granted: false
+  });
+  wishes.lastAsk = now;
+  persist();
+  setAction("think", 4);
+  say("could i have " + pick.text + "?", 6);
+  return true;
+}
+
+/* You made the thing. This is the whole point of asking. */
+function celebrate(key) {
+  const name = (anims[key] && anims[key].name) || key;
+  const words = String(name).toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 2);
+  let matched = null;
+  for (const w of (state.wishes || [])) {
+    if (w.granted) continue;
+    if (words.some(word => w.text.toLowerCase().includes(word))) { w.granted = true; matched = w; break; }
+  }
+  state.stats.gifts = (state.stats.gifts || 0) + 1;
+  state.stats.happiness = Math.min(1, (state.stats.happiness || 0.5) + 0.2);
+  persist();
+  putAwayBall();
+  setAction(key, 6);
+  for (let i = 0; i < 3; i++) {
+    setTimeout(() => heart(pet.x + (Math.random() * 40 - 20), pet.y - window.CB.GRID * scale() - 6), i * 260);
+  }
+  say(matched ? "you made it! " + matched.text + "!" : "a new one! thank you", 6);
+}
 
 /* ---------- pointer ---------- */
 let clickTimer = null;
@@ -584,6 +824,9 @@ function update(dt) {
 
   updateBall(dt);
   updateEffects(dt);
+  updateGoal(dt);
+  updateDrone(dt);
+  updateMini(dt);
 
   if (talk.open) {
     if (Date.now() / 1000 > talk.closeAt) closeTalk();
@@ -602,14 +845,27 @@ function update(dt) {
     return;
   }
 
-  if (pet.action === "fall" || pet.y < g - 0.5) {
+  if (pet.surface === "floor" && (pet.action === "fall" || pet.y < g - 0.5)) {
     if (pet.action !== "fall" && pet.action !== "land" && pet.action !== "flip") setAction("fall", 9999);
     const wasFast = pet.vy;
+    const before = pet.y;
     pet.vy += (b.gravity || 1400) * dt;
     pet.y += pet.vy * dt;
     pet.x += pet.vx * dt;
     pet.vx *= 0.985;
     if (pet.x <= minX() || pet.x >= maxX()) { pet.vx = -pet.vx * 0.5; clampX(); }
+
+    /* your window is a shelf: coming down over its top edge, he lands on it */
+    if (state.behavior.useWindows !== false && ledge && pet.vy > 0
+        && before <= ledge.y && pet.y >= ledge.y
+        && pet.x > ledge.x0 + 4 && pet.x < ledge.x1 - 4) {
+      pet.y = ledge.y; pet.vy = 0; pet.vx = 0;
+      standOn("ledge");
+      setAction("land", 0.3);
+      puff(pet.x, ledge.y, 1);
+      return advance(dt);
+    }
+
     if (pet.y >= g) {
       pet.y = g;
       if (pet.vy > 700) { pet.vy = -pet.vy * 0.28; puff(pet.x, g, 3); }
@@ -621,13 +877,27 @@ function update(dt) {
     }
   } else if (pet.action === "walk" || pet.action === "run") {
     const speed = pet.action === "run" ? (b.runSpeed || 74) : (b.walkSpeed || 26);
-    const t = pet.target == null ? pet.x : pet.target;
-    const dir = Math.sign(t - pet.x);
-    if (dir !== 0) pet.facing = dir;
-    pet.x += dir * speed * dt;
-    if (Math.abs(t - pet.x) < speed * dt + 1) { pet.x = t; pet.target = null; setAction("idle", 0.8 + Math.random()); }
-    clampX();
-    if (pet.x <= minX() || pet.x >= maxX()) { pet.target = null; setAction("idle", 1); }
+    const axis = surfaceDef().axis;
+    const at = pet[axis];
+    const dir = pet.target != null ? (Math.sign(pet.target - at) || pet.dir) : pet.dir;
+    pet.dir = dir || 1;
+    /* Which way he faces is which way he is going — but "forward" in his own frame
+       points somewhere different once he is turned a quarter or a half turn. */
+    pet.facing = axis === "x"
+      ? (pet.surface === "ceiling" ? -pet.dir : pet.dir)
+      : (pet.surface === "left" ? pet.dir : -pet.dir);
+    pet[axis] = at + pet.dir * speed * dt;
+
+    if (pet.target != null && Math.abs(pet.target - pet[axis]) < speed * dt + 1) {
+      pet[axis] = pet.target; pet.target = null; setAction("idle", 0.8 + Math.random());
+    }
+
+    const { min, max } = surfaceBounds();
+    if (pet[axis] <= min) { pet[axis] = min; atEnd(-1); }
+    else if (pet[axis] >= max) { pet[axis] = max; atEnd(1); }
+
+    /* on a wall or the ceiling he sometimes simply lets go */
+    if (!onGround() && Math.random() < dt * 0.06) letGo();
   } else if (pet.action === "land" || pet.action === "kick" || pet.action === "flip") {
     if (pet.actionT > pet.hold) setAction("idle", isPlaying() ? 0.15 : 1);
   }
@@ -645,6 +915,50 @@ function update(dt) {
     if (near) { pet.lastInteraction = Date.now() / 1000; setAction("idle", 1.2); say("hm?"); }
   }
   advance(dt);
+}
+
+/* What happens when he reaches the end of what he is standing on. This is the
+   whole of "he can walk the entire screen": every edge is somewhere to keep going
+   rather than somewhere to turn round. */
+function atEnd(side) {
+  pet.target = null;
+  const climbing = state.behavior.climbEdges !== false;
+
+  if (pet.surface === "ledge") { letGo(); return; }          /* walks off your window */
+
+  if (pet.surface === "floor") {
+    if (climbing && Math.random() < 0.55) {
+      standOn(side < 0 ? "left" : "right");
+      pet.dir = -1;                                          /* up the wall */
+      setAction("walk", 14);
+      return;
+    }
+    pet.dir = -side; setAction("idle", 0.6 + Math.random()); return;
+  }
+
+  if (pet.surface === "left" || pet.surface === "right") {
+    if (side > 0) { standOn("floor"); setAction("land", 0.3); return; }   /* back down */
+    if (climbing && Math.random() < 0.5) {                                /* onto the ceiling */
+      standOn("ceiling");
+      pet.x = pet.surface === "left" ? minX() : maxX();
+      pet.x = Math.max(minX(), Math.min(maxX(), pet.x));
+      pet.dir = pet.x <= minX() + 1 ? 1 : -1;
+      setAction("walk", 12);
+      return;
+    }
+    pet.dir = 1; setAction("walk", 12); return;                           /* head back down */
+  }
+
+  if (pet.surface === "ceiling") {
+    if (climbing && Math.random() < 0.7) {
+      standOn(side < 0 ? "left" : "right");
+      pet.y = topY();
+      pet.dir = 1;                                                        /* down the wall */
+      setAction("walk", 14);
+      return;
+    }
+    letGo();
+  }
 }
 
 function advance(dt) {
@@ -670,25 +984,65 @@ function render() {
   const s = scale();
   const CBx = window.CB;
   const lift = Math.max(0, ground() - pet.y);
-  const airborne = lift > 1;
+  const airborne = onGround() ? lift > 1 : false;
+  const angle = surfaceDef().angle;
+  const groundWin = BASE_Y + Math.min(120, lift);
 
-  if (state.look.shadow && !pet.dragging) {
-    const y = BASE_Y + Math.min(80, lift);
+  if (state.look.shadow && !pet.dragging && (pet.surface === "floor" || pet.surface === "ledge")) {
+    const y = pet.surface === "ledge" ? BASE_Y : groundWin;
     if (y < WIN_H - 1) CBx.drawShadow(ctx, CX, y, s, airborne ? 0.10 : 0.18);
   }
 
+  /* the goal he put up stands behind him */
+  if (goal) {
+    CBx.drawProp(ctx, "goal", goal.stage, {
+      cx: toWinX(goal.x), baseY: toWinY(ground()), scale: goalScale()
+    });
+  }
+
   /* props that belong to what he is doing */
-  if (state.behavior.useProps && !pet.dragging && !airborne) {
-    if (pet.action === "work") CBx.drawProp(ctx, "laptop", Math.floor(pet.frame / 2), {
+  if (state.behavior.useProps && !pet.dragging && !airborne && onGround()) {
+    if (pet.action === "work" && !drone) CBx.drawProp(ctx, "laptop", Math.floor(pet.frame / 2), {
       cx: CX + pet.facing * (s * 7), cy: BASE_Y - s * 3, scale: Math.max(2, s - 1) });
     if (pet.action === "drink") CBx.drawProp(ctx, "mug", Math.floor(Date.now() / 400), {
       cx: CX + pet.facing * (s * 7), cy: BASE_Y - s * 3, scale: Math.max(2, s - 1) });
   }
 
+  /* his own pet, and the leash between them */
+  if (mini) {
+    const ms = Math.max(2, s - 2);
+    const ma = mini.moving ? anims.walk : anims.idle;
+    const mf = Math.min(mini.frame, ma.frames.length - 1);
+    const mx = toWinX(mini.x), my = toWinY(mini.y);
+    if (state.look.shadow) CBx.drawShadow(ctx, mx, my, ms, 0.14 * mini.alpha);
+    ctx.save();
+    ctx.globalAlpha = mini.alpha;
+    ctx.strokeStyle = window.CB.resolveColors(state.look.colors).dark;
+    ctx.lineWidth = Math.max(1, s / 3);
+    ctx.beginPath();
+    const handX = CX + pet.facing * s * 5, handY = BASE_Y - s * 7;
+    const headY = my - CBx.GRID * ms * 0.7;
+    ctx.moveTo(handX, handY);
+    ctx.quadraticCurveTo((handX + mx) / 2, Math.max(handY, headY) + s * 3, mx, headY);
+    ctx.stroke();
+    ctx.restore();
+    CBx.drawFrame(ctx, ma.frames[mf], {
+      cx: mx, baseY: my + (CBx.GRID - CBx.FOOT_ROW) * ms, scale: ms, palette: miniPalette,
+      flip: mini.facing < 0, bob: ma.bob[mf] || 0, alpha: mini.alpha
+    });
+  }
+
   CBx.drawFrame(ctx, a.frames[f], {
-    cx: CX, baseY: BASE_Y + (CBx.GRID - CBx.FOOT_ROW) * s, scale: s, palette: palette,
+    cx: CX, baseY: BASE_Y + (CBx.GRID - CBx.FOOT_ROW) * s, scale: s, palette: palette, angle: angle,
     flip: pet.facing < 0, bob: a.bob[f] || 0, alpha: state.look.opacity == null ? 1 : state.look.opacity
   });
+
+  /* the drone, above everything */
+  if (drone) {
+    CBx.drawProp(ctx, "drone", Math.floor(drone.t * 20), {
+      cx: toWinX(drone.x), cy: toWinY(drone.y), scale: Math.max(2, s - 2), alpha: drone.alpha
+    });
+  }
 
   if (ball) {
     const r = ballR();
@@ -718,9 +1072,11 @@ function place() {
   }
 
   if (mouse.ok) {
-    const halfW = spriteW() / 2 + 8, h = window.CB.GRID * s + 10;
+    /* his body sits "above" his feet, whichever way up that happens to be */
+    const up = surfaceDef().up, half = (window.CB.GRID * s) / 2;
+    const bx = pet.x + up.x * half, by = pet.y + up.y * half, r = half + 10;
     const over = pet.dragging || talk.open ||
-      (mouse.x > pet.x - halfW && mouse.x < pet.x + halfW && mouse.y > pet.y - h && mouse.y < pet.y + 8);
+      (Math.abs(mouse.x - bx) < r && Math.abs(mouse.y - by) < r);
     if (over !== hovering) {
       hovering = over;
       if (ignoring === over) { ignoring = !over; send("setIgnoreMouse", { value: ignoring }); }
