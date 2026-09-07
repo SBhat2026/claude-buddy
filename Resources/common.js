@@ -384,8 +384,7 @@ const DEFAULT_STATE = {
     useProps: true,        /* laptop while working, mug on a coffee break   */
     nightMode: true,       /* dozes off sooner in the small hours           */
     talkOnClick: true,     /* click him and type at him                      */
-    climbEdges: true,      /* up the sides of the screen and across the top  */
-    useWindows: true,      /* stands on the top edge of your frontmost window */
+    useWindows: true,      /* jumps onto search bars, toolbars, tab strips    */
     buildGoal: true,       /* puts up a goal and takes shots at it           */
     flyDrone: true,
     walkPet: true,         /* takes his own small pet out                    */

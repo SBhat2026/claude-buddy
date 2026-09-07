@@ -58,6 +58,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     var lastContextSent: Date = .distantPast
     var appBeforeTalking: NSRunningApplication?
     var lastLedge: [String: CGFloat]?
+    var lastPlatformScan: Date = .distantPast
 
     var resourcesURL: URL {
         if let r = Bundle.main.resourceURL,
@@ -511,6 +512,78 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         return (title, NSRect(origin: origin, size: size))
     }
 
+    /// Things on screen with a top edge worth standing on: a search field, a toolbar,
+    /// a row of tabs. Roles rather than guesses, filtered by size — a two-pixel
+    /// separator is not a shelf, and neither is the whole window content area.
+    static let platformRoles: Set<String> = [
+        "AXTextField", "AXSearchField", "AXComboBox", "AXToolbar",
+        "AXTabGroup", "AXButton", "AXPopUpButton", "AXSegmentedControl"
+    ]
+
+    func axRect(of element: AXUIElement) -> NSRect? {
+        var origin = CGPoint.zero, size = CGSize.zero
+        var posRef: CFTypeRef?, sizeRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &posRef) == .success,
+              AXUIElementCopyAttributeValue(element, kAXSizeAttribute as CFString, &sizeRef) == .success,
+              AXValueGetValue(posRef as! AXValue, .cgPoint, &origin),
+              AXValueGetValue(sizeRef as! AXValue, .cgSize, &size) else { return nil }
+        return NSRect(origin: origin, size: size)
+    }
+
+    func axString(_ element: AXUIElement, _ attribute: String) -> String {
+        var ref: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &ref) == .success else { return "" }
+        return (ref as? String) ?? ""
+    }
+
+    /// Walks the window's accessibility tree, shallowly and with a hard budget: this
+    /// runs off the main thread every few seconds, and a deep app like a browser has
+    /// thousands of elements that nobody needs enumerated to find the search bar.
+    func uiPlatforms(window: AXUIElement) -> [[String: Any]] {
+        var found: [[String: Any]] = []
+        var visited = 0
+        func walk(_ element: AXUIElement, _ depth: Int) {
+            if depth > 6 || found.count >= 24 || visited > 400 { return }
+            visited += 1
+            let role = axString(element, kAXRoleAttribute as String)
+            if AppDelegate.platformRoles.contains(role), let r = axRect(of: element),
+               r.width >= 90, r.height >= 14, r.height <= 90 {
+                let label = [axString(element, kAXTitleAttribute as String),
+                             axString(element, kAXDescriptionAttribute as String),
+                             axString(element, kAXPlaceholderValueAttribute as String)]
+                    .first(where: { !$0.isEmpty }) ?? ""
+                found.append(["x": r.minX, "y": r.minY, "w": r.width, "h": r.height,
+                              "role": String(role.dropFirst(2)), "label": String(label.prefix(40))])
+            }
+            var kidsRef: CFTypeRef?
+            if AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &kidsRef) == .success,
+               let kids = kidsRef as? [AXUIElement] {
+                for kid in kids.prefix(24) { walk(kid, depth + 1) }
+            }
+        }
+        walk(window, 0)
+        return found
+    }
+
+    func refreshPlatforms(pid: pid_t) {
+        guard AXIsProcessTrusted() else { dlog("platforms: accessibility not granted"); return }
+        guard wantsTitles() else { return }
+        if Date().timeIntervalSince(lastPlatformScan) < 4 { return }
+        lastPlatformScan = Date()
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let self = self else { return }
+            let app = AXUIElementCreateApplication(pid)
+            var windowRef: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute as CFString, &windowRef) == .success,
+                  let window = windowRef else { return }
+            let list = self.uiPlatforms(window: window as! AXUIElement)
+            DispatchQueue.main.async {
+                dlog("platforms:", list.count, list.prefix(3).map { ($0["role"] as? String ?? "?") + ":" + ($0["label"] as? String ?? "") })
+                self.post(to: self.petView, ["type": "platforms", "list": list])
+            }
+        }
+    }
+
     func wantsTitles() -> Bool {
         guard let a = state["awareness"] as? [String: Any] else { return false }
         return (a["seeTitle"] as? Bool) ?? false
@@ -563,6 +636,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                                           "idle": idle, "hour": Calendar.current.component(.hour, from: Date())]
                 if let windowRect = windowRect { msg["window"] = windowRect }
                 self.post(to: self.petView, msg)
+                if let pid = front?.processIdentifier, !mine { self.refreshPlatforms(pid: pid) }
             }
         }
         RunLoop.main.add(contextTimer!, forMode: .common)

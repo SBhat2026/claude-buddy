@@ -98,8 +98,11 @@ and constrains decoding to it, so `do` can only ever be an animation he actually
 has. Asked politely instead, a 1B model returns the placeholder text from the prompt
 about a third of the time.
 
-**Window titles** need macOS Accessibility, and the Awareness tab has the button that
-asks for it. They are worth the permission — an app name cannot tell a repository
+**Accessibility** is what window titles and the shelves both need, and the Awareness
+tab has the button that asks for it. One caveat worth knowing: the permission is
+remembered against the exact binary, so **rebuilding the app means granting it
+again** — remove the old entry in System Settings → Privacy & Security →
+Accessibility and re-add the new one. They are worth the permission — an app name cannot tell a repository
 from a video — but they also carry document names, subject lines and the tab you are
 on, so the switch is separate and can be turned off on its own. He never sees window
 contents, keystrokes, or a picture of the screen; the app asks for nothing else.
@@ -143,20 +146,27 @@ is what walks. That is why he can be dragged, thrown, and bounced without any of
 usual desktop-pet trickery, and why hit testing is just "is the pointer over the
 sprite".
 
-### The whole screen, not just the bottom of it
+### He jumps onto the things you are using
 
-He walks the floor, and when he reaches the side of the screen he often keeps going:
-up the wall, across the ceiling upside down, down the far side. He lets go now and
-then and falls, which is the same fall as being dropped.
+Not the walls — the interface. With Accessibility granted, the frontmost window's
+accessibility tree is read every few seconds and the wide, shallow things in it are
+treated as shelves: **the search field, the toolbar, the tab strip, a row of buttons,
+and the top edge of the window itself.**
 
-He is drawn rotated about the point his feet touch, so a quarter turn puts him on a
-wall rather than sliding him along one, and which way he faces flips with the turn —
-on the left wall "forward" is a different screen direction than on the right.
+He hops up onto one, walks its length, hops to another, and steps off when he is
+bored. What he lands on he sometimes has an opinion about — *"so many tabs"* on a
+tab strip, *"anything good?"* on a search field.
 
-**Your windows are ledges.** With Accessibility granted he is told where the
-frontmost window is, and its top edge becomes something he can jump onto and walk
-along. Move the window and he rides it; move it out from under him and he falls.
-Turn it off in Behaviour and he ignores your windows entirely.
+Because they are real elements and not a picture of them, they behave like the real
+thing: scroll the toolbar away, close the window, or switch app, and the shelf under
+him stops existing — so he falls, which is the same fall as being dropped. Move the
+window and he rides it.
+
+The tree walk is bounded (depth six, four hundred nodes, twenty-four shelves, once
+every four seconds, off the main thread) because a browser has thousands of elements
+and none of the rest are worth enumerating to find the search bar.
+
+Turn it off in Behaviour and he only ever uses the floor.
 
 ### Things he gets up to
 

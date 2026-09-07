@@ -64,19 +64,15 @@ let miniPalette = window.CB.paletteFor({ body: "#d99a80" });
 let screenRect = { x: 0, y: 0, w: 1440, h: 860 };
 let mouse = { x: 0, y: 0, ok: false };
 
-/* Which way is up, and how far round he is turned, for each thing he can stand on.
-   His contact point is what x,y mean — the sprite is drawn rotated about it, so a
-   quarter turn puts his feet on a wall instead of sliding him along one. */
+/* He stands on two kinds of thing: the floor, and whatever is on your screen —
+   a search field, a toolbar, a row of tabs, the top edge of the window itself. */
 const SURFACES = {
-  floor:   { up: { x: 0, y: -1 }, angle: 0,             axis: "x" },
-  ledge:   { up: { x: 0, y: -1 }, angle: 0,             axis: "x" },
-  left:    { up: { x: 1, y: 0 },  angle: Math.PI / 2,   axis: "y" },
-  right:   { up: { x: -1, y: 0 }, angle: -Math.PI / 2,  axis: "y" },
-  ceiling: { up: { x: 0, y: 1 },  angle: Math.PI,       axis: "x" }
+  floor:    { up: { x: 0, y: -1 }, angle: 0, axis: "x" },
+  platform: { up: { x: 0, y: -1 }, angle: 0, axis: "x" }
 };
 
 const pet = {
-  x: 300, y: 700, vx: 0, vy: 0, facing: 1, surface: "floor", dir: 1,
+  x: 300, y: 700, vx: 0, vy: 0, facing: 1, surface: "floor", dir: 1, platform: null,
   action: "idle", frame: 0, frameT: 0, actionT: 0, hold: 2,
   target: null, dragging: false, grabDX: 0, grabDY: 0,
   lastInteraction: Date.now() / 1000, asleep: false
@@ -85,7 +81,9 @@ const pet = {
 /* the ball, and short-lived things like dust and hearts */
 let ball = null;
 let effects = [];
-let ledge = null;      /* the top edge of your frontmost window */
+let platforms = [];    /* things on screen he can stand on, top edges */
+let windowLedge = null;
+let uiList = [];
 let goal = null;       /* one he built himself                  */
 let drone = null;
 let mini = null;       /* his own small pet, on a leash          */
@@ -107,10 +105,17 @@ window.__onNative = function (msg) {
     screenRect = msg.rect;
     if (pet.y < screenRect.y || pet.y > screenRect.y + screenRect.h) pet.y = ground();
     clampX();
+    rebuildPlatforms();
   }
   else if (msg.type === "mouse") { mouse.x = msg.x; mouse.y = msg.y; mouse.ok = true; }
   else if (msg.type === "command") command(msg.cmd, msg);
   else if (msg.type === "context") onContext(msg);
+  else if (msg.type === "platforms") {
+    uiList = (msg.list || []).map(p => ({
+      x0: p.x, x1: p.x + p.w, y: p.y, role: p.role || "", label: p.label || ""
+    }));
+    rebuildPlatforms();
+  }
   else if (msg.type === "modelReply") onModelReply(msg);
 };
 
@@ -138,33 +143,108 @@ const minX = () => screenRect.x + (state.behavior.edgeMargin || 24);
 const maxX = () => screenRect.x + screenRect.w - (state.behavior.edgeMargin || 24);
 function clampX() { pet.x = Math.max(minX(), Math.min(maxX(), pet.x)); }
 const topY = () => screenRect.y + 24;
-const onGround = () => pet.surface === "floor" || pet.surface === "ledge";
+const onFloor = () => pet.surface === "floor" && pet.y >= ground() - 1;
 const surfaceDef = () => SURFACES[pet.surface] || SURFACES.floor;
-const surfaceY = () => (pet.surface === "ledge" && ledge ? ledge.y : ground());
+const surfaceY = () => (pet.surface === "platform" && pet.platform ? pet.platform.y : ground());
 
 /* How far he can walk before he runs out of whatever he is standing on. */
 function surfaceBounds() {
-  switch (pet.surface) {
-    case "ledge": return ledge ? { min: ledge.x0 + 8, max: ledge.x1 - 8 } : { min: minX(), max: maxX() };
-    case "left": case "right": return { min: topY(), max: ground() };
-    default: return { min: minX(), max: maxX() };
+  if (pet.surface === "platform" && pet.platform) {
+    const p = pet.platform;
+    const pad = Math.min(10, Math.max(4, (p.x1 - p.x0) * 0.12));
+    return { min: p.x0 + pad, max: p.x1 - pad };
   }
+  return { min: minX(), max: maxX() };
 }
 
-function standOn(surface) {
-  pet.surface = surface;
+function standOnFloor() {
+  pet.surface = "floor";
+  pet.platform = null;
+  pet.y = ground();
   pet.vx = pet.vy = 0;
-  if (surface === "left") pet.x = screenRect.x + 2;
-  if (surface === "right") pet.x = screenRect.x + screenRect.w - 2;
-  if (surface === "ceiling") pet.y = screenRect.y + 2;
-  if (surface === "floor") pet.y = ground();
-  if (surface === "ledge" && ledge) pet.y = ledge.y;
 }
 
 function letGo() {
   pet.surface = "floor";
+  pet.platform = null;
   pet.vy = 20;
   setAction("fall", 9999);
+}
+
+/* ---------- things on screen ----------
+   A platform is a real thing you are using: the search field, the toolbar, the tab
+   strip, the top edge of the window. He treats their top edges as shelves. */
+
+const usePlatforms = () => state.behavior.useWindows !== false;
+
+function platformKey(p) { return `${p.role}|${p.label}|${Math.round(p.x1 - p.x0)}`; }
+
+/* The window's top edge and everything the accessibility tree offered, filtered to
+   the ones that are actually above the floor and wide enough to stand on. */
+function rebuildPlatforms() {
+  const all = (windowLedge ? [windowLedge] : []).concat(usePlatforms() ? uiList : []);
+  platforms = all
+    .filter(p => p.y < ground() - 24 && p.y > screenRect.y + 4 && (p.x1 - p.x0) > 48)
+    .filter((p, i, a) => a.findIndex(q => Math.abs(q.y - p.y) < 6 && Math.abs(q.x0 - p.x0) < 24) === i)
+    .slice(0, 24);
+
+  /* the thing he was standing on may have moved, or stopped existing */
+  if (pet.surface === "platform" && pet.platform) {
+    const key = platformKey(pet.platform);
+    const still = platforms.find(p => platformKey(p) === key);
+    if (!still) { letGo(); return; }
+    pet.platform = still;
+    if (pet.x < still.x0 + 4 || pet.x > still.x1 - 4) letGo();
+    else pet.y = still.y;
+  }
+}
+
+function reachable(p, fromY, fromX) {
+  const rise = fromY - p.y;
+  return rise > 26 && rise < 210 && Math.abs((p.x0 + p.x1) / 2 - fromX) < 420 && (p.x1 - p.x0) > 40;
+}
+
+function pickPlatform() {
+  if (!usePlatforms()) return null;
+  const here = surfaceY();
+  const options = platforms.filter(p => p !== pet.platform && reachable(p, here, pet.x));
+  if (!options.length) return null;
+  return options[(Math.random() * options.length) | 0];
+}
+
+/* A hop with enough in it to clear the edge, aimed at the middle of the target. */
+function hopTo(p) {
+  const g = state.behavior.gravity || 1400;
+  const rise = Math.max(30, surfaceY() - p.y);
+  pet.vy = -Math.sqrt(2 * g * (rise + 34));
+  const aim = Math.max(p.x0 + 12, Math.min(p.x1 - 12, pet.x + (pet.facing || 1) * 40));
+  const airtime = Math.max(0.25, (Math.abs(pet.vy) / g) * 1.35);
+  pet.vx = (aim - pet.x) / airtime;
+  pet.y -= 1;
+  pet.surface = "floor";
+  pet.platform = null;
+  setAction("fall", 6);
+  return true;
+}
+
+function landOn(p) {
+  pet.platform = p;
+  pet.surface = "platform";
+  pet.y = p.y;
+  pet.vx = 0; pet.vy = 0;
+  setAction("land", 0.3);
+  puff(pet.x, p.y, 1);
+  if (p.label && Math.random() < 0.35) say(quipFor(p), 3.2);
+}
+
+function quipFor(p) {
+  const what = (p.label || p.role || "").toLowerCase();
+  if (/search|find|query/.test(what)) return "anything good?";
+  if (/tab/.test(what)) return "so many tabs";
+  if (/toolbar|tool/.test(what)) return "nice shelf";
+  if (/send|submit|save/.test(what)) return "don't mind me";
+  if (/window/.test(what)) return "good view";
+  return "up here";
 }
 const toWinX = sx => CX + (sx - pet.x);
 const toWinY = sy => BASE_Y + (sy - pet.y);
@@ -312,21 +392,16 @@ function decide() {
   }
 
   /* now and then he asks you for something, or starts a project of his own */
-  if (onGround() && !busy()) {
+  if (onFloor() && !busy()) {
     const r0 = Math.random();
     if (r0 < 0.05 && maybeWish()) return;
     if (r0 < 0.11 && b.buildGoal !== false) { putUpGoal(); return; }
     if (r0 < 0.16 && b.flyDrone !== false) { flyDrone(); return; }
     if (r0 < 0.21 && b.walkPet !== false) { walkTheDog(); return; }
-    /* your own window is a ledge worth climbing onto */
-    if (r0 < 0.28 && b.useWindows !== false && ledge
-        && ledge.y < ground() - 60 && ledge.y > topY() + 20
-        && pet.x > ledge.x0 + 12 && pet.x < ledge.x1 - 12) {
-      pet.vy = -Math.sqrt(2 * (b.gravity || 1400) * (ground() - ledge.y + 30));
-      pet.y -= 1;
-      setAction("fall", 6);
-      if (Math.random() < 0.4) say("up here");
-      return;
+    /* something on your screen is worth standing on */
+    if (r0 < 0.32) {
+      const p = pickPlatform();
+      if (p) { hopTo(p); return; }
     }
   }
 
@@ -335,6 +410,16 @@ function decide() {
   if (act && Math.random() < 0.55) {
     if (act.do === "ball") { if (b.playBall) { startPlaying(14 + Math.random() * 14); return; } }
     else if (anims[act.do]) { setAction(act.do, 3 + Math.random() * 4); return; }
+  }
+
+  if (pet.surface === "platform") {
+    const p = pet.platform;
+    const b2 = surfaceBounds();
+    if (Math.random() < 0.45) { pet.target = b2.min + Math.random() * (b2.max - b2.min); setAction("walk", 8); }
+    else if (Math.random() < 0.25) { const next = pickPlatform(); if (next) { hopTo(next); return; } setAction("idle", 2); }
+    else setAction((state.rotation || []).filter(k => anims[k])[0] || "idle", 2 + Math.random() * 2);
+    void p;
+    return;
   }
 
   const r = Math.random();
@@ -367,8 +452,9 @@ function command(cmd, msg) {
   else if (cmd === "goal") putUpGoal();
   else if (cmd === "drone") flyDrone();
   else if (cmd === "dog") walkTheDog();
-  else if (cmd === "climb") {
-    if (onGround()) { pet.target = Math.random() < 0.5 ? minX() : maxX(); setAction("walk", 14); }
+  else if (cmd === "climb" || cmd === "hop") {
+    const p = pickPlatform();
+    if (p) hopTo(p); else say("nothing to jump onto", 2.5);
   }
   else if (cmd === "wish") { if (!maybeWish()) say("i'm alright for now", 3); }
   else if (cmd === "center") { pet.x = screenRect.x + screenRect.w / 2; pet.y = ground(); setAction("land", 0.4); }
@@ -400,18 +486,10 @@ function onContext(ctx0) {
   const appChanged = ctx0.app && ctx0.app !== aware.lastApp;
   const titleChanged = (ctx0.title || "") !== aware.lastTitle;
 
-  if (ctx0.window && state.behavior.useWindows !== false) {
-    const w = ctx0.window;
-    ledge = { x0: w.x, x1: w.x + w.w, y: w.y };
-    /* the window moved out from under him */
-    if (pet.surface === "ledge" && (pet.x < ledge.x0 + 4 || pet.x > ledge.x1 - 4 || Math.abs(pet.y - ledge.y) > 2)) {
-      if (Math.abs(pet.y - ledge.y) > 2 && pet.x > ledge.x0 && pet.x < ledge.x1) pet.y = ledge.y;
-      else letGo();
-    }
-  } else if (!ctx0.window) {
-    if (pet.surface === "ledge") letGo();
-    ledge = null;
-  }
+  windowLedge = (ctx0.window && usePlatforms())
+    ? { x0: ctx0.window.x, x1: ctx0.window.x + ctx0.window.w, y: ctx0.window.y, role: "Window", label: ctx0.app || "window" }
+    : null;
+  rebuildPlatforms();
 
   const hit = matchReaction(ctx0.app, a.seeTitle ? ctx0.title : "");
   aware.activity = hit;
@@ -545,7 +623,7 @@ const COMMANDS = [
   { re: /\b(goal|net|posts)\b/,                         run: () => { putUpGoal(); return "putting it up"; } },
   { re: /\b(drone|fly|quadcopter)\b/,                   run: () => { flyDrone(); return "launching"; } },
   { re: /\b(dog|pet|puppy|walk him|walk it)\b/,          run: () => { walkTheDog(); return "come on then"; } },
-  { re: /\b(climb|wall|ceiling|edge)\b/,                run: () => { pet.target = Math.random() < 0.5 ? minX() : maxX(); setAction("walk", 14); return "up we go"; } },
+  { re: /\b(climb|jump up|hop|get up there|up there)\b/, run: () => { const p = pickPlatform(); if (!p) return "nothing to jump onto"; hopTo(p); return "up we go"; } },
   { re: /\b(want|wish|like|need)\b/,                    run: () => { if (!maybeWish()) return "i'm alright"; return ""; } },
   { re: /\b(score|keepie|keepy|record|goals)\b/,         run: () => "best " + ((state.stats && state.stats.bestKeepies) || 0) + " · " + ((state.stats && state.stats.goals) || 0) + " goals" }
 ];
@@ -635,7 +713,7 @@ const goalW = () => 16 * goalScale();
 const goalH = () => 7 * goalScale();
 
 function putUpGoal() {
-  if (goal || !onGround()) return;
+  if (goal || !onFloor()) return;
   const dir = pet.facing || 1;
   goal = {
     x: Math.max(minX() + goalW(), Math.min(maxX() - goalW(), pet.x + dir * 130)),
@@ -670,7 +748,7 @@ function updateGoal(dt) {
 }
 
 function flyDrone() {
-  if (drone || !onGround()) return;
+  if (drone || !onFloor()) return;
   drone = { t: 0, alpha: 0, x: pet.x, y: ground() - 90, until: Date.now() / 1000 + 22 };
   setAction("work", 3);
   say("watch it go", 2.4);
@@ -689,7 +767,7 @@ function updateDrone(dt) {
 }
 
 function walkTheDog() {
-  if (mini || !onGround()) return;
+  if (mini || !onFloor()) return;
   mini = {
     x: pet.x - (pet.facing || 1) * 40, y: ground(), frame: 0, frameT: 0,
     facing: pet.facing || 1, alpha: 0, moving: false, until: Date.now() / 1000 + 50
@@ -845,7 +923,7 @@ function update(dt) {
     return;
   }
 
-  if (pet.surface === "floor" && (pet.action === "fall" || pet.y < g - 0.5)) {
+  if (pet.surface !== "platform" && (pet.action === "fall" || pet.y < g - 0.5)) {
     if (pet.action !== "fall" && pet.action !== "land" && pet.action !== "flip") setAction("fall", 9999);
     const wasFast = pet.vy;
     const before = pet.y;
@@ -855,19 +933,20 @@ function update(dt) {
     pet.vx *= 0.985;
     if (pet.x <= minX() || pet.x >= maxX()) { pet.vx = -pet.vx * 0.5; clampX(); }
 
-    /* your window is a shelf: coming down over its top edge, he lands on it */
-    if (state.behavior.useWindows !== false && ledge && pet.vy > 0
-        && before <= ledge.y && pet.y >= ledge.y
-        && pet.x > ledge.x0 + 4 && pet.x < ledge.x1 - 4) {
-      pet.y = ledge.y; pet.vy = 0; pet.vx = 0;
-      standOn("ledge");
-      setAction("land", 0.3);
-      puff(pet.x, ledge.y, 1);
-      return advance(dt);
+    /* anything on screen with a top edge is a shelf: coming down over one, he lands */
+    if (usePlatforms() && pet.vy > 0) {
+      for (const p of platforms) {
+        if (before <= p.y && pet.y >= p.y && pet.x > p.x0 + 4 && pet.x < p.x1 - 4 && p.y < g - 8) {
+          landOn(p);
+          return advance(dt);
+        }
+      }
     }
 
     if (pet.y >= g) {
       pet.y = g;
+      pet.platform = null;
+      pet.surface = "floor";
       if (pet.vy > 700) { pet.vy = -pet.vy * 0.28; puff(pet.x, g, 3); }
       else {
         if (wasFast > 260) puff(pet.x, g, 2);
@@ -881,11 +960,7 @@ function update(dt) {
     const at = pet[axis];
     const dir = pet.target != null ? (Math.sign(pet.target - at) || pet.dir) : pet.dir;
     pet.dir = dir || 1;
-    /* Which way he faces is which way he is going — but "forward" in his own frame
-       points somewhere different once he is turned a quarter or a half turn. */
-    pet.facing = axis === "x"
-      ? (pet.surface === "ceiling" ? -pet.dir : pet.dir)
-      : (pet.surface === "left" ? pet.dir : -pet.dir);
+    pet.facing = pet.dir;
     pet[axis] = at + pet.dir * speed * dt;
 
     if (pet.target != null && Math.abs(pet.target - pet[axis]) < speed * dt + 1) {
@@ -896,8 +971,7 @@ function update(dt) {
     if (pet[axis] <= min) { pet[axis] = min; atEnd(-1); }
     else if (pet[axis] >= max) { pet[axis] = max; atEnd(1); }
 
-    /* on a wall or the ceiling he sometimes simply lets go */
-    if (!onGround() && Math.random() < dt * 0.06) letGo();
+
   } else if (pet.action === "land" || pet.action === "kick" || pet.action === "flip") {
     if (pet.actionT > pet.hold) setAction("idle", isPlaying() ? 0.15 : 1);
   }
@@ -917,48 +991,22 @@ function update(dt) {
   advance(dt);
 }
 
-/* What happens when he reaches the end of what he is standing on. This is the
-   whole of "he can walk the entire screen": every edge is somewhere to keep going
-   rather than somewhere to turn round. */
+/* What happens when he reaches the end of what he is standing on. Screen edges are
+   just edges — he turns round. The interesting case is running out of toolbar. */
 function atEnd(side) {
   pet.target = null;
-  const climbing = state.behavior.climbEdges !== false;
 
-  if (pet.surface === "ledge") { letGo(); return; }          /* walks off your window */
-
-  if (pet.surface === "floor") {
-    if (climbing && Math.random() < 0.55) {
-      standOn(side < 0 ? "left" : "right");
-      pet.dir = -1;                                          /* up the wall */
-      setAction("walk", 14);
-      return;
-    }
-    pet.dir = -side; setAction("idle", 0.6 + Math.random()); return;
+  if (pet.surface === "platform") {
+    const next = pickPlatform();
+    if (next && Math.random() < 0.6) { hopTo(next); return; }
+    if (Math.random() < 0.5) { letGo(); return; }      /* steps off and drops home */
+    pet.dir = -side;
+    setAction("walk", 8);
+    return;
   }
 
-  if (pet.surface === "left" || pet.surface === "right") {
-    if (side > 0) { standOn("floor"); setAction("land", 0.3); return; }   /* back down */
-    if (climbing && Math.random() < 0.5) {                                /* onto the ceiling */
-      standOn("ceiling");
-      pet.x = pet.surface === "left" ? minX() : maxX();
-      pet.x = Math.max(minX(), Math.min(maxX(), pet.x));
-      pet.dir = pet.x <= minX() + 1 ? 1 : -1;
-      setAction("walk", 12);
-      return;
-    }
-    pet.dir = 1; setAction("walk", 12); return;                           /* head back down */
-  }
-
-  if (pet.surface === "ceiling") {
-    if (climbing && Math.random() < 0.7) {
-      standOn(side < 0 ? "left" : "right");
-      pet.y = topY();
-      pet.dir = 1;                                                        /* down the wall */
-      setAction("walk", 14);
-      return;
-    }
-    letGo();
-  }
+  pet.dir = -side;
+  setAction("idle", 0.6 + Math.random());
 }
 
 function advance(dt) {
@@ -984,12 +1032,12 @@ function render() {
   const s = scale();
   const CBx = window.CB;
   const lift = Math.max(0, ground() - pet.y);
-  const airborne = onGround() ? lift > 1 : false;
+  const airborne = pet.surface === "floor" && lift > 1;
   const angle = surfaceDef().angle;
   const groundWin = BASE_Y + Math.min(120, lift);
 
-  if (state.look.shadow && !pet.dragging && (pet.surface === "floor" || pet.surface === "ledge")) {
-    const y = pet.surface === "ledge" ? BASE_Y : groundWin;
+  if (state.look.shadow && !pet.dragging) {
+    const y = pet.surface === "platform" ? BASE_Y : groundWin;
     if (y < WIN_H - 1) CBx.drawShadow(ctx, CX, y, s, airborne ? 0.10 : 0.18);
   }
 
@@ -1001,7 +1049,7 @@ function render() {
   }
 
   /* props that belong to what he is doing */
-  if (state.behavior.useProps && !pet.dragging && !airborne && onGround()) {
+  if (state.behavior.useProps && !pet.dragging && !airborne && onFloor()) {
     if (pet.action === "work" && !drone) CBx.drawProp(ctx, "laptop", Math.floor(pet.frame / 2), {
       cx: CX + pet.facing * (s * 7), cy: BASE_Y - s * 3, scale: Math.max(2, s - 1) });
     if (pet.action === "drink") CBx.drawProp(ctx, "mug", Math.floor(Date.now() / 400), {

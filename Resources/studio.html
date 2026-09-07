@@ -227,8 +227,7 @@
           <div class="field"><label>Play with a ball</label><input type="checkbox" id="bBall"></div>
           <div class="field"><label>Use props (laptop, mug)</label><input type="checkbox" id="bProps"></div>
           <div class="field"><label>Wind down at night</label><input type="checkbox" id="bNight"></div>
-          <div class="field"><label>Climb the screen edges</label><input type="checkbox" id="bClimb"></div>
-          <div class="field"><label>Stand on your windows</label><input type="checkbox" id="bWindows"></div>
+          <div class="field"><label>Jump onto things on screen</label><input type="checkbox" id="bWindows"></div>
           <div class="field"><label>Put up a goal</label><input type="checkbox" id="bGoal"></div>
           <div class="field"><label>Fly a drone</label><input type="checkbox" id="bDrone"></div>
           <div class="field"><label>Walk his own pet</label><input type="checkbox" id="bDog"></div>
@@ -269,6 +268,8 @@
             <div class="field"><label>The window's title</label><input type="checkbox" id="aTitle">
               <button data-act="grantAX">Allow…</button></div>
             <div class="hint" id="axStatus"></div>
+            <div class="hint">Accessibility is also what lets him see the search bars, toolbars and tab strips he
+              jumps onto — the same permission, read the same way.</div>
             <div class="hint">Window titles need macOS Accessibility, and they can carry more than you expect —
               a document name, a subject line, the tab you are on. Never the contents, never your keystrokes,
               never a picture of the screen. Turn it off and he falls back to app names alone.</div>
@@ -699,7 +700,6 @@ el("bSpeech").onchange = e => { state.behavior.speech = e.target.checked; save()
 el("bBall").onchange = e => { state.behavior.playBall = e.target.checked; save(); };
 el("bProps").onchange = e => { state.behavior.useProps = e.target.checked; save(); };
 el("bNight").onchange = e => { state.behavior.nightMode = e.target.checked; save(); };
-el("bClimb").onchange = e => { state.behavior.climbEdges = e.target.checked; save(); };
 el("bWindows").onchange = e => { state.behavior.useWindows = e.target.checked; save(true); if (e.target.checked) send("requestAccessibility"); };
 el("bGoal").onchange = e => { state.behavior.buildGoal = e.target.checked; save(); };
 el("bDrone").onchange = e => { state.behavior.flyDrone = e.target.checked; save(); };
@@ -837,7 +837,6 @@ function renderControls() {
   el("bestKeepies").textContent = (state.stats && state.stats.bestKeepies) || 0;
   el("goalCount").textContent = (state.stats && state.stats.goals) || 0;
   el("giftCount").textContent = (state.stats && state.stats.gifts) || 0;
-  el("bClimb").checked = state.behavior.climbEdges !== false;
   el("bWindows").checked = state.behavior.useWindows !== false;
   el("bGoal").checked = state.behavior.buildGoal !== false;
   el("bDrone").checked = state.behavior.flyDrone !== false;
