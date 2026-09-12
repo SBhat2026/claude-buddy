@@ -83,7 +83,18 @@ const LEGS_KICK = R(["1", 4, 4], ["1", 6, 6], ["1", 10, 10], ["1", 14, 14]);
 const LEGS_KICK2= R(["1", 4, 4], ["1", 6, 6], ["1", 10, 10], ["1", 15, 15]);
 const FEET      = R(["1", 4, 5], ["1", 11, 13]);
 
+/* ── more arms and legs ── */
+const ARMS_IN   = R(["1", 3, 13]);                         /* nubs pulled in      */
+const ARM_POINT = R(["1", 2, 15]);                         /* one arm, all the way */
+const LEGS_TIP  = R(["1", 5, 5], ["1", 7, 7], ["1", 9, 9], ["1", 11, 11]);
+const LEGS_TIP_A= R(["1", 5, 5], ["1", 9, 9]);
+const LEGS_TIP_B= R(["1", 7, 7], ["1", 11, 11]);
+const LEGS_TAP  = R(["1", 4, 4], ["1", 6, 6], ["1", 10, 10]);
+
 /* ── things around him, always clear of the body ── */
+const HAT_TOP  = R(["w", 5, 11]);
+const HAT_MID  = R(["w", 4, 12]);
+const HAT_BAND = R(["0", 4, 12]);
 const BAND     = R(["0", 5, 11]);
 const EYES_CUP = R(["1", 3, 13], ["0", EYE_L, EYE_L], ["0", EYE_R, EYE_R], ["0", 2, 2], ["0", 14, 14]);
 const EYES_CUPC= R(["1", 3, 13], ["2", EYE_L - 1, EYE_L + 1], ["2", EYE_R - 1, EYE_R + 1], ["0", 2, 2], ["0", 14, 14]);
@@ -175,6 +186,24 @@ const F = {
   grooveA:   A(A(stand([LEGS, LEGS, LEGS_FR], EYES_CUP), 2, BAND), 1, NOTE),
   grooveB:   A(A(stand([LEGS, LEGS, LEGS_BK], EYES_CUPC), 2, BAND), 1, NOTE2),
 
+  /* ── eight more, all of them eyes, legs and arms ── */
+  chefA:     A(A(A(stand([LEGS, LEGS, LEGS]), 0, HAT_TOP), 1, HAT_MID), 2, HAT_BAND),
+  chefB:     A(A(A(stand([LEGS, LEGS, LEGS], null, null, ARMS_R), 0, HAT_TOP), 1, HAT_MID), 2, HAT_BAND),
+  laughA:    stand([LEGS, LEGS, LEGS], EYES_H, CARET, ARMS_OUT),
+  laughB:    stand([LEGS, LEGS, LEGS_IN], EYES_H, CARET, ARMS_IN),
+  yawnA:     stand([LEGS, LEGS, LEGS], EYES_C, null, ARMS_OUT),
+  yawnB:     A(stand([LEGS, LEGS, LEGS], ARM_UP_LR, null, ARMS_OUT), 2, HIGH_LR),
+  pointA:    stand([LEGS, LEGS, LEGS], EYES_RK, null, ARM_POINT),
+  pointB:    stand([LEGS, LEGS, LEGS_BK], EYES_RK, null, ARM_POINT),
+  shrugA:    stand([LEGS, LEGS, LEGS], EYES_T, BROW_T, ARMS_OUT),
+  shrugB:    stand([LEGS, LEGS, LEGS], EYES_T, BROW_T, ARMS_IN),
+  clapA:     stand([LEGS, LEGS, LEGS], EYES_H, CARET, ARMS_OUT),
+  clapB:     stand([LEGS, LEGS, LEGS], EYES_H, CARET, ARMS_IN),
+  tipA:      stand([LEGS_TIP, LEGS_TIP, LEGS_TIP_A], EYES_LK),
+  tipB:      stand([LEGS_TIP, LEGS_TIP, LEGS_TIP_B], EYES_RK),
+  tapA:      stand([LEGS, LEGS, LEGS_TAP], EYES_C),
+  tapB:      stand([LEGS, LEGS, LEGS]),
+
   /* carrying: the box rides above him */
   carryA:    A(A(stand([LEGS, LEGS, LEGS], EYES_T, BROW_T, ARMS_OUT), 1, BOX_TOP), 2, BOX_MID),
   carryB:    A(A(stand([LEGS, LEGS, LEGS_FR], EYES_T, BROW_T, ARMS_OUT), 1, BOX_TOP), 2, BOX_MID)
@@ -239,11 +268,29 @@ const DEFAULT_ANIMATIONS = {
   nap:   { name: "dozing",      builtin: true, fps: 1.2, loop: true, bob: [0,0],
            frames: [F.napA,F.napB] },
   happy: { name: "pleased",     builtin: true, fps: 2, loop: true, bob: [0,0,0,0],
-           frames: [F.pleased,F.pleased,F.idle,F.pleased] }
+           frames: [F.pleased,F.pleased,F.idle,F.pleased] },
+
+  chef:  { name: "cooking",     builtin: true, fps: 4, loop: true, bob: [0,0,0,0],
+           frames: [F.chefA,F.chefB,F.chefA,F.chefB] },
+  laugh: { name: "laughing",    builtin: true, fps: 7, loop: true, bob: [0,0,0,0],
+           frames: [F.laughA,F.laughB,F.laughA,F.laughB] },
+  yawn:  { name: "yawning",     builtin: true, fps: 1.6, loop: true, bob: [0,0,0,0],
+           frames: [F.idle,F.yawnA,F.yawnB,F.yawnA] },
+  point: { name: "pointing",    builtin: true, fps: 3, loop: true, bob: [0,0,0,0],
+           frames: [F.idle,F.pointA,F.pointB,F.pointA] },
+  shrug: { name: "shrugging",   builtin: true, fps: 1.6, loop: true, bob: [0,0,0,0],
+           frames: [F.idle,F.shrugA,F.shrugB,F.shrugA] },
+  clap:  { name: "applauding",  builtin: true, fps: 9, loop: true, bob: [0,0,0,0],
+           frames: [F.clapA,F.clapB,F.clapA,F.clapB] },
+  tiptoe:{ name: "creeping",    builtin: true, fps: 5, loop: true, bob: [0,0,0,0],
+           frames: [F.tipA,F.tipB,F.tipA,F.tipB] },
+  tap:   { name: "waiting",     builtin: true, fps: 4, loop: true, bob: [0,0,0,0],
+           frames: [F.tapA,F.tapB,F.tapA,F.tapB] }
 };
 
 /* Animations he may pick on his own when he has nothing better to do. */
-const DEFAULT_ROTATION = ["wave", "dance", "work", "think", "jump", "desk", "chill", "read", "stretch", "groove", "sit", "happy", "peek"];
+const DEFAULT_ROTATION = ["wave", "dance", "work", "think", "jump", "desk", "chill", "read", "stretch",
+                          "groove", "sit", "happy", "peek", "laugh", "yawn", "shrug", "tap", "chef", "point"];
 
 /* Actions the engine needs and must never lose. */
 const REQUIRED = ["idle", "walk", "run", "sleep", "held", "fall", "land"];
@@ -504,7 +551,7 @@ function drawStanding(ctx, frame, o) {
 
 /* ---------- state ---------- */
 
-const SPRITE_VERSION = 3;
+const SPRITE_VERSION = 4;
 
 const DEFAULT_STATE = {
   version: SPRITE_VERSION,
@@ -568,13 +615,19 @@ function mergeState(saved) {
   if (!saved || typeof saved !== "object") return s;
   if (typeof saved.name === "string" && saved.name.trim()) s.name = saved.name.slice(0, 24);
   Object.assign(s.look, saved.look || {});
-  /* He used to be eleven rows tall and is now six, so a size chosen for the old
-     shape would leave him a smudge. Reset it once, and only once. */
+  /* The character's dimensions changed, so a size chosen for the old shape no
+     longer means what it meant. Reset it once, and only once. */
   if (saved.version !== SPRITE_VERSION) s.look.scale = DEFAULT_STATE.look.scale;
   s.look.colors = Object.assign({}, DEFAULT_COLORS, (saved.look && saved.look.colors) || {});
   Object.assign(s.behavior, saved.behavior || {});
   if (Array.isArray(saved.behavior && saved.behavior.phrases)) s.behavior.phrases = saved.behavior.phrases.slice(0, 40);
-  if (Array.isArray(saved.rotation)) s.rotation = saved.rotation.slice();
+  if (Array.isArray(saved.rotation)) {
+    /* Their ticks are kept; new animations that shipped since are added rather than
+       sitting in the gallery where he will never choose them. */
+    s.rotation = saved.version === SPRITE_VERSION
+      ? saved.rotation.slice()
+      : Array.from(new Set(saved.rotation.concat(DEFAULT_ROTATION)));
+  }
   if (Array.isArray(saved.reactions)) s.reactions = saved.reactions.slice(0, 40);
   Object.assign(s.awareness, saved.awareness || {});
   Object.assign(s.stats, saved.stats || {});

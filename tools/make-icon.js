@@ -78,3 +78,43 @@ const png = Buffer.concat([
 const out = process.argv[2] || path.join(__dirname, "..", "build", "icon.png");
 fs.writeFileSync(out, png);
 console.log("wrote", out, png.length + " bytes");
+
+/* The menu bar gets the same creature, not a hand-drawn approximation of him.
+   A template image is drawn where it is opaque and tinted by the system, so his
+   body is black and his eyes are holes — which is why he reads on a light menu bar
+   and on a dark one without two artworks. */
+(function menubar() {
+  const rows = idle;
+  let x0 = 16, x1 = -1, y0 = 16, y1 = -1;
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+    if (rows[y][x] === ".") continue;
+    if (x < x0) x0 = x; if (x > x1) x1 = x;
+    if (y < y0) y0 = y; if (y > y1) y1 = y;
+  }
+  const cell = 4, W2 = (x1 - x0 + 1) * cell, H2 = (y1 - y0 + 1) * cell;
+  const buf = Buffer.alloc(W2 * H2 * 4, 0);
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+    const ch = rows[y][x];
+    if (ch !== "1") continue;                       /* eyes stay as holes */
+    for (let dy = 0; dy < cell; dy++) for (let dx = 0; dx < cell; dx++) {
+      const px2 = ((y - y0) * cell + dy) * W2 + ((x - x0) * cell + dx);
+      buf[px2 * 4] = 0; buf[px2 * 4 + 1] = 0; buf[px2 * 4 + 2] = 0; buf[px2 * 4 + 3] = 255;
+    }
+  }
+  const ih = Buffer.alloc(13);
+  ih.writeUInt32BE(W2, 0); ih.writeUInt32BE(H2, 4);
+  ih[8] = 8; ih[9] = 6;
+  const raw2 = Buffer.alloc((W2 * 4 + 1) * H2);
+  for (let y = 0; y < H2; y++) {
+    raw2[y * (W2 * 4 + 1)] = 0;
+    buf.copy(raw2, y * (W2 * 4 + 1) + 1, y * W2 * 4, (y + 1) * W2 * 4);
+  }
+  const out2 = path.join(__dirname, "..", "Resources", "menubar.png");
+  fs.writeFileSync(out2, Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    chunk("IHDR", ih),
+    chunk("IDAT", zlib.deflateSync(raw2, { level: 9 })),
+    chunk("IEND", Buffer.alloc(0))
+  ]));
+  console.log("wrote", out2, W2 + "x" + H2);
+})();

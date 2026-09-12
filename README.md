@@ -149,15 +149,24 @@ stretched, not leaned, not tipped over. Three things move, and only these three:
 | **the legs** | the three rows beneath the body |
 | **the arms** | the nubs at the sides, and cells beyond them |
 
-All twenty-eight animations are combinations of those. A step shortens one pair of
+All thirty-six animations are combinations of those. A step shortens one pair of
 legs by a row — never by half, which is what made him look like he was squatting as
 he walked — and because every standing frame carries exactly three rows of leg, the
 head lands on the same row in all of them and cannot bob or compress.
 
-A check walks every frame of every animation and fails if the head moves within a
-non-crouching animation, or if a frame has lost its eyes. It has caught both: three
-poses were rendering him eyeless, because the row a raised arm lives on is the row
-his eyes are on.
+**`tools/check.js` enforces that there is one model, and the build runs it.** Any row
+wide enough to be part of his body must *be* his body — same left and right edge,
+every time — and every frame must contain the canonical body row, must have eyes, and
+must not move his head within an animation that is not folding his legs.
+
+It has caught real things: three poses were rendering him eyeless, because the row a
+raised arm lives on is the row his eyes are on. And the menu-bar icon used to be a
+second animal entirely — hand-drawn in Swift with a narrower head and three legs
+where he has four — so the project shipped two creatures, one of them sitting in the
+menu bar all day. That image is now generated from the sprite itself at build time
+(`Resources/menubar.png`, a template image: body opaque, eyes as holes, so it reads
+on a light menu bar and a dark one), and there is no longer anywhere for a second
+model to hide.
 
 He is 47×40 pixels at the default size.
 
@@ -227,6 +236,8 @@ Turn it off in Behaviour and he only ever uses the floor.
   and he packs it away.
 - **Goals are a daily tally.** Yesterday's are yesterday's; the count starts again
   each day.
+- **Cooking, laughing, yawning, pointing, shrugging, applauding, creeping and
+  waiting.** Eight more poses in the rotation, built the same way as the rest.
 - **Checking in.** Every so often — forty-five minutes by default, adjustable — he
   asks how it is going. With a model he asks about whatever you are actually in;
   without one he asks anyway.

@@ -254,23 +254,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         statusItem.menu = menu
     }
 
-    /// A tiny version of the sprite for the menu bar.
+    /// The menu bar gets the same creature as the screen.
+    ///
+    /// This used to be drawn by hand here — a body of one width, arms of another,
+    /// and three legs where he has four — which meant the project shipped two
+    /// different animals, one of them sitting in the menu bar all day. The image is
+    /// now generated from the sprite itself at build time, so there is one model
+    /// and no way for it to drift.
     func statusImage() -> NSImage {
-        let size = NSSize(width: 18, height: 18)
-        let img = NSImage(size: size)
-        img.lockFocus()
+        if let url = Bundle.main.url(forResource: "menubar", withExtension: "png"),
+           let img = NSImage(contentsOf: url) {
+            let height: CGFloat = 15
+            img.size = NSSize(width: height * (img.size.width / img.size.height), height: height)
+            img.isTemplate = true
+            return img
+        }
+        /* Only if the resource is missing: a plain block, obviously not him. */
+        let fallback = NSImage(size: NSSize(width: 16, height: 14))
+        fallback.lockFocus()
         NSColor.black.setFill()
-        let u: CGFloat = 2
-        NSRect(x: 4, y: 8, width: 10, height: 8).fill()   // body
-        NSRect(x: 2, y: 8, width: 14, height: 3).fill()   // arms
-        NSRect(x: 4, y: 3, width: u, height: 5).fill()    // legs
-        NSRect(x: 8, y: 3, width: u, height: 5).fill()
-        NSRect(x: 12, y: 3, width: u, height: 5).fill()
-        NSColor.white.setFill()
-        NSRect(x: 6, y: 13, width: u, height: u).fill()   // eyes
-        NSRect(x: 10, y: 13, width: u, height: u).fill()
-        img.unlockFocus()
-        return img
+        NSRect(x: 1, y: 1, width: 14, height: 12).fill()
+        fallback.unlockFocus()
+        fallback.isTemplate = true
+        return fallback
     }
 
     @objc func menuStudio() { openStudio() }

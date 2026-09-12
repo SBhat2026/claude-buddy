@@ -9,6 +9,9 @@ NAME="ClaudeBuddy"
 echo "› cleaning"
 rm -rf "$APP" "$ROOT/build/$NAME" "$ROOT/build/icon.iconset" "$ROOT/build/$NAME.icns"
 
+echo "› checking the model"
+node "$ROOT/tools/check.js" || { echo "  the sprite failed its own checks — not building"; exit 1; }
+
 echo "› compiling"
 SDK="$(xcrun --show-sdk-path)"
 swiftc -O -sdk "$SDK" \
@@ -29,7 +32,7 @@ iconutil -c icns "$ROOT/build/icon.iconset" -o "$ROOT/build/$NAME.icns"
 echo "› bundling"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$ROOT/build/$NAME" "$APP/Contents/MacOS/$NAME"
-cp "$ROOT/Resources/"*.html "$ROOT/Resources/"*.js "$APP/Contents/Resources/"
+cp "$ROOT/Resources/"*.html "$ROOT/Resources/"*.js "$ROOT/Resources/"*.png "$APP/Contents/Resources/"
 cp "$ROOT/build/$NAME.icns" "$APP/Contents/Resources/AppIcon.icns"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
