@@ -96,6 +96,7 @@
       <button data-cmd="goal">Goal</button>
       <button data-cmd="drone">Drone</button>
       <button data-cmd="dog">Walk pet</button>
+      <button data-cmd="checkin">Check in</button>
       <button data-cmd="flip">Backflip</button>
       <button data-cmd="sleep">Sleep</button>
       <button data-cmd="center">Recentre</button>
@@ -232,6 +233,9 @@
           <div class="field"><label>Fly a drone</label><input type="checkbox" id="bDrone"></div>
           <div class="field"><label>Walk his own pet</label><input type="checkbox" id="bDog"></div>
           <div class="field"><label>Ask for things to be made</label><input type="checkbox" id="bWish"></div>
+          <div class="field"><label>Sleep in a bed</label><input type="checkbox" id="bBed"></div>
+          <div class="field"><label>Check in on you</label><input type="checkbox" id="bCheck"></div>
+          <div class="field"><label>…how often</label><input type="range" id="bCheckMins" min="5" max="180" step="5"><span class="val" id="bCheckMinsV"></span></div>
           <div class="hint">Keepie-uppies <b id="bestKeepies">0</b> · goals <b id="goalCount">0</b> ·
             things you made him <b id="giftCount">0</b></div>
           <div class="field"><label>Sleep after</label><input type="range" id="bSleep" min="0" max="600" step="10"><span class="val" id="bSleepV"></span></div>
@@ -705,6 +709,9 @@ el("bGoal").onchange = e => { state.behavior.buildGoal = e.target.checked; save(
 el("bDrone").onchange = e => { state.behavior.flyDrone = e.target.checked; save(); };
 el("bDog").onchange = e => { state.behavior.walkPet = e.target.checked; save(); };
 el("bWish").onchange = e => { state.behavior.proposeIdeas = e.target.checked; save(); };
+el("bBed").onchange = e => { state.behavior.useBed = e.target.checked; save(); };
+el("bCheck").onchange = e => { state.behavior.checkIn = e.target.checked; save(); };
+bindRange("bCheckMins", null, v => state.behavior.checkInMinutes = v, v => "every " + v + " min");
 
 /* What he has asked for, and the shortest path from asking to having. */
 function renderWishes() {
@@ -842,6 +849,9 @@ function renderControls() {
   el("bDrone").checked = state.behavior.flyDrone !== false;
   el("bDog").checked = state.behavior.walkPet !== false;
   el("bWish").checked = state.behavior.proposeIdeas !== false;
+  el("bBed").checked = state.behavior.useBed !== false;
+  el("bCheck").checked = state.behavior.checkIn !== false;
+  set("bCheckMins", state.behavior.checkInMinutes || 45, v => "every " + v + " min");
   renderWishes();
   const aw = state.awareness || {};
   el("aOn").checked = !!aw.enabled;

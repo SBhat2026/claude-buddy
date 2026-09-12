@@ -154,7 +154,10 @@ treated as shelves: **the search field, the toolbar, the tab strip, a row of but
 and the top edge of the window itself.**
 
 He hops up onto one, walks its length, hops to another, and steps off when he is
-bored. What he lands on he sometimes has an opinion about — *"so many tabs"* on a
+bored. A browser toolbar is eight hundred pixels above the floor he lives on, which
+no sensible little hop could ever reach — so he does not do sensible little hops. He
+crouches first and then launches, which is also the difference between reading as a
+jump and reading as a glitch. What he lands on he sometimes has an opinion about — *"so many tabs"* on a
 tab strip, *"anything good?"* on a search field.
 
 Because they are real elements and not a picture of them, they behave like the real
@@ -177,6 +180,12 @@ Turn it off in Behaviour and he only ever uses the floor.
   lazy circuit above him before coming back down.
 - **His own pet.** A smaller one of him on a leash, which follows him about at a
   polite distance and stops when he stops. The leash is drawn between them.
+- **A bed.** When he gets tired he does not switch off where he stands: he takes a
+  bed out, unrolls it, and lies down on it with his legs tucked under him. Wake him
+  and he packs it away.
+- **Checking in.** Every so often — forty-five minutes by default, adjustable — he
+  asks how it is going. With a model he asks about whatever you are actually in;
+  without one he asks anyway.
 
 Each has a switch in Behaviour, and each can be asked for by name in the talk line
 or from the menu bar.

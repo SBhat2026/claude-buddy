@@ -200,9 +200,12 @@ function rebuildPlatforms() {
   }
 }
 
+/* A toolbar lives near the top of the screen and he lives at the bottom, which is
+   eight hundred pixels of rise — a sensible little hop could never reach one, so he
+   does not do sensible little hops. He crouches first and then launches. */
 function reachable(p, fromY, fromX) {
   const rise = fromY - p.y;
-  return rise > 26 && rise < 210 && Math.abs((p.x0 + p.x1) / 2 - fromX) < 420 && (p.x1 - p.x0) > 40;
+  return rise > 26 && rise < 900 && Math.abs((p.x0 + p.x1) / 2 - fromX) < 760 && (p.x1 - p.x0) > 40;
 }
 
 function pickPlatform() {
@@ -213,19 +216,32 @@ function pickPlatform() {
   return options[(Math.random() * options.length) | 0];
 }
 
-/* A hop with enough in it to clear the edge, aimed at the middle of the target. */
+/* The crouch is not decoration: an eight-hundred-pixel leap that starts instantly
+   reads as a glitch, and the same leap with a wind-up reads as a jump. */
 function hopTo(p) {
+  if (!p) return false;
+  pet.pendingHop = p;
+  pet.target = null;
+  const aim = (p.x0 + p.x1) / 2;
+  if (Math.abs(aim - pet.x) > 8) pet.facing = Math.sign(aim - pet.x);
+  setAction("jump", 0.42);
+  return true;
+}
+
+function launchHop(p) {
+  pet.pendingHop = null;
   const g = state.behavior.gravity || 1400;
   const rise = Math.max(30, surfaceY() - p.y);
-  pet.vy = -Math.sqrt(2 * g * (rise + 34));
-  const aim = Math.max(p.x0 + 12, Math.min(p.x1 - 12, pet.x + (pet.facing || 1) * 40));
-  const airtime = Math.max(0.25, (Math.abs(pet.vy) / g) * 1.35);
-  pet.vx = (aim - pet.x) / airtime;
+  pet.vy = -Math.sqrt(2 * g * (rise + 44));
+  /* aim for the nearest part of it he can stand on, not its middle */
+  const aim = Math.max(p.x0 + 14, Math.min(p.x1 - 14, pet.x));
+  const airtime = Math.max(0.25, (Math.abs(pet.vy) / g) * 1.3);
+  pet.vx = Math.max(-620, Math.min(620, (aim - pet.x) / airtime));
   pet.y -= 1;
   pet.surface = "floor";
   pet.platform = null;
-  setAction("fall", 6);
-  return true;
+  puff(pet.x, pet.y, 2);
+  setAction("fall", 8);
 }
 
 function landOn(p) {
@@ -257,7 +273,7 @@ function setAction(name, holdSeconds) {
   pet.action = name;
   pet.actionT = 0;
   pet.hold = holdSeconds == null ? 2.5 : holdSeconds;
-  pet.asleep = (name === "sleep");
+  pet.asleep = (name === "sleep" || name === "abed");
 }
 
 function say(text, seconds) {
@@ -378,7 +394,8 @@ function decide() {
   const now = Date.now() / 1000;
   const nap = sleepDelay();
 
-  if (nap > 0 && now - pet.lastInteraction > nap) { putAwayBall(); setAction("sleep", 9999); return; }
+  if (nap > 0 && now - pet.lastInteraction > nap) { goToBed(); return; }
+  if (maybeCheckIn()) return;
 
   if (isPlaying()) { walkTo(ball.x - pet.facing * 6, Math.abs(ball.x - pet.x) > 120); return; }
   if (ball && !ball.out && now >= play.until) {
@@ -446,8 +463,8 @@ function command(cmd, msg) {
   if (cmd === "play" && anims[msg.anim]) setAction(msg.anim, msg.seconds || 4);
   else if (cmd === "ball") startPlaying(msg.seconds || 25);
   else if (cmd === "come") { if (mouse.ok) walkTo(mouse.x, true); }
-  else if (cmd === "sleep") { putAwayBall(); setAction("sleep", 9999); }
-  else if (cmd === "wake") { setAction("idle", 1); say("morning"); }
+  else if (cmd === "sleep") { goToBed(); }
+  else if (cmd === "wake") { getUp(); say("morning"); }
   else if (cmd === "say") say(msg.text || "hi", 3.4);
   else if (cmd === "flip") setAction("flip", 0.6);
   else if (cmd === "goal") putUpGoal();
@@ -458,6 +475,7 @@ function command(cmd, msg) {
     if (p) hopTo(p); else say("nothing to jump onto", 2.5);
   }
   else if (cmd === "wish") { if (!maybeWish()) say("i'm alright for now", 3); }
+  else if (cmd === "checkin") { checkin.last = 0; maybeCheckIn(); }
   else if (cmd === "center") { pet.x = screenRect.x + screenRect.w / 2; pet.y = ground(); setAction("land", 0.4); }
   else if (cmd === "jump") { pet.vy = -520; pet.y -= 1; setAction("fall", 4); }
 }
@@ -630,8 +648,8 @@ function pickMove() {
 const COMMANDS = [
   { re: /\b(good|nice|well done|thanks|love)\b/,        run: () => { heart(pet.x, pet.y - window.CB.GRID * scale() - 6); setAction("wave", 3); return "🙂"; } },
   { re: /\b(dance|boogie|party)\b/,                     run: () => { setAction("dance", 6); return "🙂"; } },
-  { re: /\b(sleep|nap|bed|goodnight|good night)\b/,     run: () => { putAwayBall(); setAction("sleep", 9999); return "night"; } },
-  { re: /\b(wake|morning|get up)\b/,                    run: () => { setAction("idle", 1); return "morning"; } },
+  { re: /\b(sleep|nap|bed|goodnight|good night)\b/,     run: () => { goToBed(); return "night"; } },
+  { re: /\b(wake|morning|get up)\b/,                    run: () => { getUp(); return "morning"; } },
   { re: /\b(come|here|follow me)\b/,                    run: () => { if (mouse.ok) walkTo(mouse.x, true); return "coming"; } },
   { re: /\b(ball|football|soccer|play|kick)\b/,          run: () => { startPlaying(30); return "watch this"; } },
   { re: /\b(flip|backflip|trick)\b/,                    run: () => { setAction("flip", 0.6); return "hup"; } },
@@ -830,7 +848,77 @@ function updateMini(dt) {
   while (mini.frameT >= step) { mini.frameT -= step; mini.frame = (mini.frame + 1) % a.frames.length; }
 }
 
-const busy = () => Boolean(goal || drone || mini || isPlaying());
+let bed = null;
+const checkin = { last: Date.now() / 1000 };
+
+/* He asks how it is going, on a timer rather than at random, because a check-in
+   that lands four times in ten minutes is not a check-in. */
+function checkInLine() {
+  const app = (aware.context && aware.context.app) || "";
+  const lines = ["how's it going?", "any progress?", "how are we doing?",
+                 app ? "still in " + app + "?" : "what are we on?", "need anything?"];
+  return lines[(Math.random() * lines.length) | 0];
+}
+
+function maybeCheckIn() {
+  const b = state.behavior;
+  if (b.checkIn === false) return false;
+  const now = Date.now() / 1000;
+  const gap = Math.max(5, Number(b.checkInMinutes) || 45) * 60;
+  if (now - checkin.last < gap) return false;
+  if (pet.asleep || pet.dragging || talk.open) return false;
+  checkin.last = now;
+
+  const a = state.awareness || {};
+  if (a.enabled && a.model) {
+    const id = "r" + (++aware.seq);
+    aware.pending = id;
+    aware.lastAsk = now;
+    send("askModel", {
+      id: id, endpoint: a.endpoint, model: a.model, timeoutMs: 30000, temperature: 0.9, maxTokens: 60,
+      schema: replySchema(9),
+      system: (a.persona || "") + " Keep every reply to at most eight lowercase words.",
+      prompt: "You have not checked on them in a while. " + situation(aware.context) +
+              " Ask how it is going — one short friendly question — and pick a move."
+    });
+    setAction("wave", 3);
+    /* if the model says nothing, he still checks in */
+    setTimeout(() => { if (aware.pending === id) { aware.pending = null; say(checkInLine(), 6); } }, 32000);
+    return true;
+  }
+
+  say(checkInLine(), 6);
+  setAction(Math.random() < 0.5 ? "wave" : "think", 3);
+  return true;
+}
+
+/* Going to bed rather than switching off where he stands. */
+function goToBed() {
+  if (state.behavior.useBed === false || !onFloor()) { setAction("sleep", 9999); return; }
+  putAwayBall();
+  bed = { x: pet.x + (pet.facing || 1) * 6, stage: 0, alpha: 0, t: 0 };
+  setAction("work", 1.3);
+  if (Math.random() < 0.6) say("right, that's me", 3);
+}
+
+function updateBed(dt) {
+  if (!bed) return;
+  bed.t += dt;
+  bed.alpha = bed.out ? Math.max(0, bed.alpha - dt * 2) : Math.min(1, bed.alpha + dt * 3);
+  if (bed.out && bed.alpha <= 0) { bed = null; return; }
+  if (!bed.out && bed.stage === 0 && bed.t > 0.8) bed.stage = 1;
+  if (!bed.out && bed.stage === 1 && bed.t > 1.4 && pet.action !== "abed") {
+    pet.x = bed.x;
+    setAction("abed", 9999);
+  }
+}
+
+function getUp() {
+  if (bed) bed.out = true;
+  setAction("idle", 1.2);
+}
+
+const busy = () => Boolean(goal || drone || mini || bed || isPlaying());
 
 /* ---------- things he would like you to make ----------
    He asks rarely, never more than a few outstanding, and what he asks for is
@@ -916,7 +1004,7 @@ cv.addEventListener("dblclick", () => {
 cv.addEventListener("click", () => {
   if (!state.behavior.clickReact) return;
   pet.lastInteraction = Date.now() / 1000;
-  if (pet.asleep) { setAction("idle", 1); say("…up, up"); return; }
+  if (pet.asleep) { getUp(); say("…up, up"); return; }
   clearTimeout(clickTimer);
   clickTimer = setTimeout(() => {
     if (isPlaying()) { tryKickHard(); return; }
@@ -950,6 +1038,7 @@ function update(dt) {
   updateBall(dt);
   updateEffects(dt);
   updateGoal(dt);
+  updateBed(dt);
   updateDrone(dt);
   updateMini(dt);
 
@@ -1019,21 +1108,23 @@ function update(dt) {
     else if (pet[axis] >= max) { pet[axis] = max; atEnd(1); }
 
 
-  } else if (pet.action === "land" || pet.action === "kick" || pet.action === "flip") {
+  } else if (pet.action === "jump" && pet.pendingHop) {
+    if (pet.actionT > 0.34) launchHop(pet.pendingHop);
+  } else if (pet.action === "land" || pet.action === "kick" || pet.action === "flip" || pet.action === "jump") {
     if (pet.actionT > pet.hold) setAction("idle", isPlaying() ? 0.15 : 1);
   }
 
   if (isPlaying()) tryKick(dt);
 
   pet.actionT += dt;
-  const free = !pet.asleep && ["fall", "land", "kick", "flip"].indexOf(pet.action) < 0;
+  const free = !pet.asleep && !pet.pendingHop && ["fall", "land", "kick", "flip", "jump"].indexOf(pet.action) < 0;
   if (free && pet.actionT > pet.hold) {
     const gap = isPlaying() ? 0.15 : 0.6 + (1 - (b.energy == null ? 0.5 : b.energy)) * 3.5;
     if (pet.actionT > pet.hold + Math.random() * gap) decide();
   }
   if (pet.asleep) {
     const near = mouse.ok && Math.abs(mouse.x - pet.x) < 70 && Math.abs(mouse.y - pet.y) < 90;
-    if (near) { pet.lastInteraction = Date.now() / 1000; setAction("idle", 1.2); say("hm?"); }
+    if (near) { pet.lastInteraction = Date.now() / 1000; getUp(); say("hm?"); }
   }
   advance(dt);
 }
@@ -1088,6 +1179,13 @@ function render() {
     if (y < WIN_H - 1) CBx.drawShadow(ctx, CX, y, s, airborne ? 0.10 : 0.18);
   }
 
+  /* the bed goes down before he does */
+  if (bed) {
+    window.CB.drawProp(ctx, "bed", bed.stage, {
+      cx: toWinX(bed.x), baseY: toWinY(ground()), scale: s, alpha: bed.alpha
+    });
+  }
+
   /* the goal he put up stands behind him */
   if (goal) {
     CBx.drawProp(ctx, "goal", goal.stage, {
@@ -1127,8 +1225,10 @@ function render() {
     });
   }
 
+  /* lying down, he lies ON the mattress rather than inside it */
+  const bedLift = (pet.action === "abed" && bed) ? 2 * s : 0;
   CBx.drawFrame(ctx, a.frames[f], {
-    cx: CX, baseY: BASE_Y + (CBx.GRID - CBx.FOOT_ROW) * s, scale: s, palette: palette, angle: angle,
+    cx: CX, baseY: BASE_Y + (CBx.GRID - CBx.FOOT_ROW) * s - bedLift, scale: s, palette: palette, angle: angle,
     flip: pet.facing < 0, bob: a.bob[f] || 0, alpha: state.look.opacity == null ? 1 : state.look.opacity
   });
 

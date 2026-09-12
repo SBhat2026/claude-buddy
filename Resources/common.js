@@ -55,7 +55,13 @@ const F = {
            "....1.1....1.1..", "....1.1.....1.1.", "....1.1......1.1",BLANK,BLANK],
   upside: [BLANK,BLANK,LEGS,LEGS,LEGS,BODY,ARMS,ARMS,BODY,BODY,EYESW,BODY,BODY,BLANK,BLANK,BLANK],
   tuck:   [BLANK,BLANK,BLANK,BLANK,BODY,BODY,EYESW,BODY,ARMS,ARMS,HIPS,LEG_A,BLANK,BLANK,BLANK,BLANK],
-  sip:    [BLANK,BLANK,BLANK,BODY,BODY,EYESC,ARM_UP1,BODY,ARMS,ARMS,HIPS,LEGS,LEGS,LEGS,BLANK,BLANK]
+  sip:    [BLANK,BLANK,BLANK,BODY,BODY,EYESC,ARM_UP1,BODY,ARMS,ARMS,HIPS,LEGS,LEGS,LEGS,BLANK,BLANK],
+  /* Lying down: head to the left, eye shut, legs folded under him. Row 13 is the
+     mattress, because row 14 is where the floor is. */
+  lieA:   [BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,".............0..",BLANK,
+           "...11111111.....", "..2111111111....", "...1.1..1.1.....",BLANK,BLANK],
+  lieB:   [BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,"..............0.",BLANK,BLANK,
+           "...11111111.....", "..2111111111....", "...1.1..1.1.....",BLANK,BLANK]
 };
 
 /* ---------- the animation library ---------- */
@@ -90,7 +96,9 @@ const DEFAULT_ANIMATIONS = {
   flip:  { name: "flip",  builtin: true, fps: 11, loop: false, bob: [0,-4,-7,-3,0],
            frames: [F.crouch,F.tuck,F.upside,F.tuck,F.land ? F.crouch : F.crouch] },
   drink: { name: "drink", builtin: true, fps: 3,  loop: true,  bob: [0,0,0,0],
-           frames: [F.idle,F.sip,F.sip,F.idle] }
+           frames: [F.idle,F.sip,F.sip,F.idle] },
+  abed:  { name: "in bed", builtin: true, fps: 1.2, loop: true, bob: [0,0,-1,0],
+           frames: [F.lieA,F.lieB,F.lieA,F.lieB] }
 };
 
 /* Animations the buddy may pick on his own when he has nothing better to do. */
@@ -105,7 +113,8 @@ const REQUIRED = ["idle","walk","run","sleep","held","fall","land"];
 
 const PROP_PALETTE = {
   w: "#fbfaf6", k: "#2b1a14", m: "#e7e1d3", c: "#5a3a24",
-  s: "#9ed4cb", r: "#d0574c", d: "#c9c2b4", y: "#e8c15a", g: "#6fae6a"
+  s: "#9ed4cb", r: "#d0574c", d: "#c9c2b4", y: "#e8c15a", g: "#6fae6a",
+  f: "#8fa9d8"
 };
 
 const PROPS = {
@@ -131,6 +140,11 @@ const PROPS = {
      "k..............k", "k..............k", "k..............k"],
     ["kkkkkkkkkkkkkkkk", "k.d...d...d...dk", "k...d...d...d..k", "k.d...d...d...dk",
      "k...d...d...d..k", "k.d...d...d...dk", "k..............k"]
+  ]},
+  /* carried folded, then unrolled */
+  bed: { size: 16, frames: [
+    ["................", "................", "......kffk......", "......kffk......"],
+    ["..wwww..........", ".kffffffffffffk.", ".kffffffffffffk.", ".k............k."]
   ]},
   drone: { size: 8, frames: [
     ["........", "d......d", ".dd..dd.", "..kkkk..", "..kwwk..", "...kk...", "........", "........"],
@@ -388,7 +402,10 @@ const DEFAULT_STATE = {
     buildGoal: true,       /* puts up a goal and takes shots at it           */
     flyDrone: true,
     walkPet: true,         /* takes his own small pet out                    */
-    proposeIdeas: true     /* asks for things for you to make                */
+    proposeIdeas: true,    /* asks for things for you to make                */
+    useBed: true,          /* pulls out a bed rather than dropping where he stands */
+    checkIn: true,         /* asks how it is going, now and then             */
+    checkInMinutes: 45
   },
 
   /* What he does about whatever you are doing. First match wins; `match` is a
