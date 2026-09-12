@@ -312,7 +312,7 @@ function updateEffects(dt) {
 
 /* ---------- the ball ---------- */
 /* about as big across as one of his legs is long */
-const ballR = () => Math.max(4, scale() * 1.1);
+const ballR = () => Math.max(4, scale() * 1.4);
 
 function takeOutBall() {
   if (ball) return;
@@ -1173,9 +1173,9 @@ function render() {
   /* props that belong to what he is doing */
   if (state.behavior.useProps && !pet.dragging && !airborne && onFloor()) {
     if (pet.action === "work" && !drone) CBx.drawProp(ctx, "laptop", Math.floor(pet.frame / 2), {
-      cx: CX + pet.facing * (s * 8), cy: BASE_Y - s * 1.5, scale: Math.max(2, s * 0.6) });
+      cx: CX + pet.facing * (s * 8.5), cy: BASE_Y - s * 2, scale: Math.max(2, s * 0.7) });
     if (pet.action === "drink") CBx.drawProp(ctx, "mug", Math.floor(Date.now() / 400), {
-      cx: CX + pet.facing * (s * 8), cy: BASE_Y - s * 1.5, scale: Math.max(2, s * 0.6) });
+      cx: CX + pet.facing * (s * 8.5), cy: BASE_Y - s * 2, scale: Math.max(2, s * 0.7) });
   }
 
   /* his own pet, and the leash between them */
@@ -1190,7 +1190,7 @@ function render() {
     ctx.strokeStyle = window.CB.resolveColors(state.look.colors).dark;
     ctx.lineWidth = Math.max(1, s / 3);
     ctx.beginPath();
-    const handX = CX + pet.facing * s * 6, handY = BASE_Y - s * 3;
+    const handX = CX + pet.facing * s * 7, handY = BASE_Y - s * 4.5;
     const headY = my - CBx.GRID * ms * 0.7;
     ctx.moveTo(handX, handY);
     ctx.quadraticCurveTo((handX + mx) / 2, Math.max(handY, headY) + s * 3, mx, headY);

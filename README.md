@@ -121,6 +121,46 @@ you can keep or move to another machine.
 Delete that file to put him back to factory settings (or use *Reset everything* in
 the Studio footer).
 
+## The character
+
+Drawn from the onboarding block — a body wider than it is tall, two square eyes set
+wide in the upper half, an arm nub out each side at mid height, and four legs in two
+pairs with a gap between them — with a little of the walking sprite's character in
+the eyes, which are the only part of his face that ever moves.
+
+```
+.###########.
+.###########.
+..#.#####.#..     eyes, set wide
+.###########.
+.###########.
+#############     the arm nubs, one each side
+#############
+.###########.
+..#.#...#.#..     four legs, two pairs
+```
+
+That body is copied into every frame and **never changes** — not squashed, not
+stretched, not leaned, not tipped over. Three things move, and only these three:
+
+| | |
+| --- | --- |
+| **the eyes** | open, shut, wide, pleased, or looking to one side |
+| **the legs** | the three rows beneath the body |
+| **the arms** | the nubs at the sides, and cells beyond them |
+
+All twenty-eight animations are combinations of those. A step shortens one pair of
+legs by a row — never by half, which is what made him look like he was squatting as
+he walked — and because every standing frame carries exactly three rows of leg, the
+head lands on the same row in all of them and cannot bob or compress.
+
+A check walks every frame of every animation and fails if the head moves within a
+non-crouching animation, or if a frame has lost its eyes. It has caught both: three
+poses were rendering him eyeless, because the row a raised arm lives on is the row
+his eyes are on.
+
+He is 47×40 pixels at the default size.
+
 ## Building it yourself
 
 Needs the Xcode command line tools and node (only to draw the icon).
