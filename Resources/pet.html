@@ -312,7 +312,7 @@ function updateEffects(dt) {
 
 /* ---------- the ball ---------- */
 /* about as big across as one of his legs is long */
-const ballR = () => Math.max(4, scale() * 1.7);
+const ballR = () => Math.max(4, scale() * 1.1);
 
 function takeOutBall() {
   if (ball) return;
@@ -832,7 +832,7 @@ function updateDrone(dt) {
 function walkTheDog() {
   if (mini || !onFloor()) return;
   mini = {
-    x: pet.x - (pet.facing || 1) * 40, y: ground(), frame: 0, frameT: 0,
+    x: pet.x - (pet.facing || 1) * 46, y: ground(), frame: 0, frameT: 0,
     facing: pet.facing || 1, alpha: 0, moving: false, until: Date.now() / 1000 + 50
   };
   say("come on then", 2.4);
@@ -844,7 +844,7 @@ function updateMini(dt) {
   mini.alpha = leaving ? mini.alpha - dt * 1.5 : Math.min(1, mini.alpha + dt * 2);
   if (mini.alpha <= 0) { mini = null; return; }
   mini.y = ground();
-  const want = pet.x - (pet.facing || 1) * 36;
+  const want = pet.x - (pet.facing || 1) * 44;
   const d = want - mini.x;
   if (Math.abs(d) > 4) {
     const sp = Math.min(150, Math.abs(d) * 2.6);
@@ -1173,14 +1173,14 @@ function render() {
   /* props that belong to what he is doing */
   if (state.behavior.useProps && !pet.dragging && !airborne && onFloor()) {
     if (pet.action === "work" && !drone) CBx.drawProp(ctx, "laptop", Math.floor(pet.frame / 2), {
-      cx: CX + pet.facing * (s * 7), cy: BASE_Y - s * 3, scale: Math.max(2, s - 1) });
+      cx: CX + pet.facing * (s * 8), cy: BASE_Y - s * 1.5, scale: Math.max(2, s * 0.6) });
     if (pet.action === "drink") CBx.drawProp(ctx, "mug", Math.floor(Date.now() / 400), {
-      cx: CX + pet.facing * (s * 7), cy: BASE_Y - s * 3, scale: Math.max(2, s - 1) });
+      cx: CX + pet.facing * (s * 8), cy: BASE_Y - s * 1.5, scale: Math.max(2, s * 0.6) });
   }
 
   /* his own pet, and the leash between them */
   if (mini) {
-    const ms = Math.max(2, s - 2);
+    const ms = Math.max(2, s * 0.62);
     const ma = mini.moving ? anims.walk : anims.idle;
     const mf = Math.min(mini.frame, ma.frames.length - 1);
     const mx = toWinX(mini.x), my = toWinY(mini.y);
@@ -1190,7 +1190,7 @@ function render() {
     ctx.strokeStyle = window.CB.resolveColors(state.look.colors).dark;
     ctx.lineWidth = Math.max(1, s / 3);
     ctx.beginPath();
-    const handX = CX + pet.facing * s * 5, handY = BASE_Y - s * 7;
+    const handX = CX + pet.facing * s * 6, handY = BASE_Y - s * 3;
     const headY = my - CBx.GRID * ms * 0.7;
     ctx.moveTo(handX, handY);
     ctx.quadraticCurveTo((handX + mx) / 2, Math.max(handY, headY) + s * 3, mx, headY);
@@ -1235,7 +1235,9 @@ function place() {
   if (nx !== winX || ny !== winY) { winX = nx; winY = ny; send("move", { x: nx, y: ny }); }
 
   const s = scale();
-  const top = BASE_Y - (window.CB.FOOT_ROW - 2) * s;   /* top of his head, in window pixels */
+  const a0 = anims[pet.action] || anims.idle;
+  const f0 = a0.frames[Math.min(pet.frame, a0.frames.length - 1)];
+  const top = BASE_Y + (window.CB.GRID - window.CB.FOOT_ROW) * s - (window.CB.GRID - window.CB.topRowOf(f0)) * s;
   const wantBottom = Math.round(WIN_H - top + 6);
   if (wantBottom !== bubbleBottom) {
     bubbleBottom = wantBottom;
@@ -1245,10 +1247,12 @@ function place() {
 
   if (mouse.ok) {
     /* his body sits "above" his feet, whichever way up that happens to be */
-    const up = surfaceDef().up, half = (window.CB.GRID * s) / 2;
-    const bx = pet.x + up.x * half, by = pet.y + up.y * half, r = half + 10;
+    const a1 = anims[pet.action] || anims.idle;
+    const f1 = a1.frames[Math.min(pet.frame, a1.frames.length - 1)];
+    const tall = (window.CB.FOOT_ROW - window.CB.topRowOf(f1)) * s;
+    const halfW = (window.CB.GRID * s) / 2 + 8;
     const over = pet.dragging || talk.open ||
-      (Math.abs(mouse.x - bx) < r && Math.abs(mouse.y - by) < r);
+      (Math.abs(mouse.x - pet.x) < halfW && mouse.y > pet.y - tall - 10 && mouse.y < pet.y + 10);
     if (over !== hovering) {
       hovering = over;
       if (ignoring === over) { ignoring = !over; send("setIgnoreMouse", { value: ignoring }); }

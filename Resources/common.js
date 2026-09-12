@@ -5,25 +5,29 @@
    Every frame is 16 rows of 16 characters.                                        */
 
 /* ---------- the character ----------
-   The proportions are not invented. Claude Code draws Clawd in the terminal with
-   quadrant blocks, and decoded to pixels that art is:
+   Claude Code draws Clawd in the terminal with quadrant blocks. Decoded to pixels,
+   that art is exactly:
 
        .############.     12 wide
        .##.######.##.     the eyes are NOTCHES, at the outer thirds
        #############.     13 wide — the widest row
        .##########...     10 wide
-       #.#....#.#....     four legs, two pairs, a four-cell gap between them
+       #.#....#.#....     four legs, two pairs, a four-cell gap
 
-   So: a solid block that bulges by one cell rather than a narrow body with arms
-   bolted on, eyes set wide rather than centred, and the right pair of legs tucked
-   in from the edge. Those horizontal proportions are copied exactly here, mapping
-   the original's 13 columns onto columns 2-14 of this grid.
+   Those four body rows are copied cell for cell and never change again. The body is
+   not squashed, stretched, leaned, tipped over or redrawn by any animation in this
+   file — a character whose head changes shape every frame is a character that
+   wobbles, and this one does not.
 
-   The one deliberate departure is height. The original is 13x5, which is too flat
-   to walk, sit, or lie down without the legs being the whole animation; this is
-   13x8, which keeps the silhouette and leaves room to move.                     */
+   Three things move, and only these three:
 
-/* Paint spans into a 16-wide row: R(["1", 3, 14]) fills columns 3 to 14. */
+     the EYES   — open, shut, wide, or looking to one side
+     the LEGS   — the rows under the body: lifted, splayed, tucked, kicked
+     the ARMS   — cells to the left and right of the body, out or raised
+
+   Everything below is a combination of those.                                    */
+
+/* Paint spans into a 16-wide row: R(["1", 2, 13]) fills columns 2 to 13. */
 function R(...spans) {
   const row = new Array(16).fill(".");
   for (const [ch, from, to] of spans) {
@@ -32,208 +36,197 @@ function R(...spans) {
   return row.join("");
 }
 
-const BLANK  = R();
-const TOP    = R(["1", 3, 14]);                                   /* 12 wide      */
-const EYES   = R(["1", 3, 14], ["0", 5, 5], ["0", 12, 12]);       /* set wide     */
-const EYESC  = R(["1", 3, 14], ["2", 5, 5], ["2", 12, 12]);       /* shut         */
-const EYESW  = R(["1", 3, 14], ["0", 4, 5], ["0", 12, 13]);       /* wide open    */
-const WIDE   = R(["1", 2, 14]);                                   /* 13 wide      */
-const NARROW = R(["1", 3, 12]);                                   /* 10 wide      */
-const LEGS   = R(["1", 2, 2], ["1", 4, 4], ["1", 9, 9], ["1", 11, 11]);
-const LEG_A  = R(["1", 2, 2], ["1", 4, 4]);                       /* front pair   */
-const LEG_B  = R(["1", 9, 9], ["1", 11, 11]);                     /* back pair    */
+const BLANK = R();
 
-/* leaning a cell either way, for dancing and peering round things */
-const TOP_L    = R(["1", 2, 13]);
-const EYES_L   = R(["1", 2, 13], ["0", 4, 4], ["0", 11, 11]);
-const WIDE_L   = R(["1", 1, 13]);
-const NARROW_L = R(["1", 2, 11]);
-const LEGS_L   = R(["1", 1, 1], ["1", 3, 3], ["1", 8, 8], ["1", 10, 10]);
-const TOP_R    = R(["1", 4, 15]);
-const EYES_R   = R(["1", 4, 15], ["0", 6, 6], ["0", 13, 13]);
-const WIDE_R   = R(["1", 3, 15]);
-const NARROW_R = R(["1", 4, 13]);
-const LEGS_R   = R(["1", 3, 3], ["1", 5, 5], ["1", 10, 10], ["1", 12, 12]);
+/* ── the body: four rows, fixed forever ── */
+const HEAD  = R(["1", 2, 13]);                                  /* 12 wide */
+const BULGE = R(["1", 1, 13]);                                  /* 13 wide */
+const HIPS  = R(["1", 2, 11]);                                  /* 10 wide */
 
-/* arms, such as they are: the bulge row reaching further out */
-const ARM_UP    = R(["1", 3, 14], ["1", 15, 15]);
-const ARM_HIGH  = R(["1", 3, 14], ["1", 15, 15], ["1", 14, 14]);
-const ARMS_OUT  = R(["1", 1, 15]);
-const ARMS_UP   = R(["1", 3, 3], ["1", 14, 14]);   /* raised, and still attached */
-const REACH     = R(["1", 2, 14], ["1", 15, 15]);
-const REACH2    = R(["1", 2, 14], ["1", 15, 15], ["1", 0, 0]);
+/* ── the eyes: notches where the original has them ── */
+const EYES   = R(["1", 2, 13], ["0", 4, 4], ["0", 11, 11]);
+const EYES_C = R(["1", 2, 13], ["2", 4, 4], ["2", 11, 11]);     /* shut      */
+const EYES_W = R(["1", 2, 13], ["0", 4, 5], ["0", 10, 11]);     /* wide      */
+const EYES_L = R(["1", 2, 13], ["0", 3, 3], ["0", 10, 10]);     /* looking left  */
+const EYES_R = R(["1", 2, 13], ["0", 5, 5], ["0", 12, 12]);     /* looking right */
 
-/* headphones: a band over the top and a cup either side of the head */
-const BAND      = R(["0", 6, 11]);                 /* the headband, over the crown */
-const PHONES    = R(["1", 3, 14], ["0", 5, 5], ["0", 12, 12], ["0", 2, 2], ["0", 15, 15]);
-const PHONES_C  = R(["1", 3, 14], ["2", 5, 5], ["2", 12, 12], ["0", 2, 2], ["0", 15, 15]);
+/* ── the arms: cells beside the body, never inside it ── */
+const ARM_OUT_R  = R(["1", 1, 14]);        /* bulge row, right hand out      */
+const ARM_OUT_L  = R(["1", 0, 13]);
+const ARM_OUT_LR = R(["1", 0, 14]);
+const ARM_UP_R   = R(["1", 2, 13], ["0", 4, 4], ["0", 11, 11], ["1", 14, 14]);
+const ARM_UP_LR  = R(["1", 2, 13], ["0", 4, 4], ["0", 11, 11], ["1", 0, 0], ["1", 14, 14]);
+const ARM_HIGH_R = R(["1", 14, 14]);                 /* hand above the head  */
+const ARM_HIGH_LR= R(["1", 0, 0], ["1", 14, 14]);
+const ARM_HOLD   = R(["1", 1, 13], ["3", 14, 15]);   /* holding a snack      */
+const ARM_PAGE_A = R(["1", 1, 13], ["w", 14, 15]);   /* holding a page       */
+const ARM_PAGE_B = R(["1", 1, 13], ["w", 14, 14], ["0", 15, 15]);
+const ARM_MUG    = R(["1", 2, 13], ["2", 4, 4], ["2", 11, 11], ["1", 14, 14], ["c", 15, 15]);
 
-/* a desk he sits behind, drawn in the frame rather than as a prop so his hands
-   can rest on it */
-const DESK_TOP  = R(["0", 0, 15]);
-const DESK_LEG  = R(["2", 1, 2], ["2", 13, 14]);
+/* ── the legs: the rows under the body ── */
+const LEGS      = R(["1", 1, 1], ["1", 3, 3], ["1", 8, 8], ["1", 10, 10]);
+const LEGS_FR   = R(["1", 1, 1], ["1", 3, 3]);                  /* front pair only */
+const LEGS_BK   = R(["1", 8, 8], ["1", 10, 10]);                /* back pair only  */
+const LEGS_WIDE = R(["1", 0, 0], ["1", 3, 3], ["1", 8, 8], ["1", 11, 11]);
+const LEGS_IN   = R(["1", 2, 2], ["1", 4, 4], ["1", 7, 7], ["1", 9, 9]);
+const LEGS_KICK = R(["1", 1, 1], ["1", 3, 3], ["1", 8, 8], ["1", 12, 12]);
+const LEGS_KICK2= R(["1", 1, 1], ["1", 3, 3], ["1", 8, 8], ["1", 13, 13]);
+const FEET      = R(["1", 1, 2], ["1", 10, 12]);                /* sitting         */
 
-/* sitting: the block settles, and two feet come out in front */
-const SEAT      = R(["1", 3, 12]);
-const FEET      = R(["1", 3, 4], ["1", 12, 14]);
-const FEET2     = R(["1", 3, 4], ["1", 11, 13]);
+/* ── things around him, drawn clear of the body ── */
+const BAND     = R(["0", 5, 10]);                      /* headphone band, above   */
+const EYES_CUPS  = R(["1", 2, 13], ["0", 4, 4], ["0", 11, 11], ["0", 1, 1], ["0", 14, 14]);
+const EYES_CUPS_C= R(["1", 2, 13], ["2", 4, 4], ["2", 11, 11], ["0", 1, 1], ["0", 14, 14]);
+const BOX_TOP  = R(["0", 4, 11]);
+const BOX_MID  = R(["0", 4, 4], ["3", 5, 10], ["0", 11, 11]);
+const DESK     = R(["0", 0, 15]);
+const DESK_LEG = R(["2", 1, 2], ["2", 12, 13]);
+const Z_HI     = R(["0", 13, 13]);
+const Z_LO     = R(["0", 14, 14]);
+const NOTE_HI  = R(["3", 13, 13]);
+const NOTE_LO  = R(["3", 1, 1]);
 
-/* things he holds */
-const PAGE_A    = R(["1", 2, 12], ["w", 13, 15]);
-const PAGE_B    = R(["1", 2, 12], ["w", 13, 14], ["0", 15, 15]);
-const BOX_TOP   = R(["0", 5, 12]);
-const BOX_MID   = R(["0", 5, 5], ["3", 6, 11], ["0", 12, 12]);
-const SNACK     = R(["1", 3, 14], ["0", 5, 5], ["0", 12, 12], ["3", 15, 15]);
-const SNACK2    = R(["1", 3, 14], ["2", 5, 5], ["2", 12, 12], ["3", 14, 15]);
-const NOTE_HI   = R(["3", 13, 13]);
-const NOTE_LO   = R(["3", 1, 1]);
-
-/* lying down: head to the left, eye shut, legs folded under */
-const LIE_TOP   = R(["1", 2, 12]);
-const LIE_MID   = R(["1", 1, 13], ["2", 2, 2]);
-const LIE_LEGS  = R(["1", 3, 3], ["1", 5, 5], ["1", 9, 9], ["1", 11, 11]);
-const Z_HI      = R(["0", 13, 13]);
-const Z_LO      = R(["0", 14, 14]);
-
-/* Frames are bottom-aligned on the floor: S(...rows) puts the last row you give it
-   on row 13, which is where the ground is. Saying what he is made of beats counting
-   blank rows, and it is why every pose here lines up with every other. */
+/* Frames are bottom-aligned: the last row you give S() lands on the floor. */
 function S(...rows) {
   const out = new Array(16).fill(BLANK);
   const first = 14 - rows.length;
   for (let i = 0; i < rows.length; i++) out[first + i] = rows[i];
   return out;
 }
-/* …and A(frame, row, content) floats something above him — a Z, a note, a box. */
+/* A() floats something clear above him — a Z, a note, a box, a headband. */
 function A(frame, row, content) {
   const out = frame.slice();
   out[row] = content;
   return out;
 }
 
-/* The standing stack. Ten rows: head, eyes, head, head, the bulge, the narrow row,
-   and FOUR rows of leg. The legs are a third of his height on purpose: he is a wide
-   character, and a wide character with short legs reads as furniture. The step is
-   only visible if there is leg to move. */
-const STAND = [TOP, EYES, TOP, TOP, WIDE, WIDE, NARROW, LEGS, LEGS, LEGS, LEGS];
-const body = (eyes, ...tail) => [TOP, eyes, TOP, TOP, WIDE, WIDE, NARROW, ...tail];
+/* The body, with whichever eyes and arms this frame wants. Rows one and three are
+   the only ones an animation may vary, and only outside the body's own columns. */
+const B = (eyes, bulge) => [HEAD, eyes || EYES, bulge || BULGE, HIPS];
 
 const F = {
-  idle:    S(...STAND),
-  blink:   S(...body(EYESC, LEGS, LEGS, LEGS, LEGS)),
-  breathe: S(TOP, EYES, TOP, WIDE, WIDE, NARROW, LEGS, LEGS, LEGS, LEGS),
-  /* a step is a pair shortened by a row, not a pair that vanishes */
-  stepA:   S(...body(EYES, LEGS, LEGS, LEGS, LEG_A)),
-  stepB:   S(...body(EYES, LEGS, LEGS, LEGS, LEG_B)),
-  crouch:  S(TOP, EYESW, TOP, TOP, WIDE, WIDE, NARROW, LEGS, LEGS),
-  stretchUp: S(TOP, EYESW, TOP, TOP, WIDE, WIDE, NARROW, LEGS, LEGS, LEGS, LEGS, LEGS),
-  sleepA:  S(TOP, EYESC, TOP, WIDE, WIDE, NARROW, LEGS, LEGS),
-  sleepB:  A(S(TOP, EYESC, TOP, WIDE, WIDE, NARROW, LEGS, LEGS), 4, Z_HI),
-  sleepC:  A(S(TOP, EYESC, TOP, WIDE, WIDE, NARROW, LEGS, LEGS), 3, Z_LO),
-  wave1:   S(TOP, EYES, ARM_UP, TOP, WIDE, WIDE, NARROW, LEGS, LEGS, LEGS, LEGS),
-  wave2:   S(ARM_UP, EYES, ARM_HIGH, TOP, WIDE, WIDE, NARROW, LEGS, LEGS, LEGS, LEGS),
-  work1:   S(TOP, EYES, TOP, TOP, WIDE, WIDE, REACH, LEGS, LEGS, LEGS, LEGS),
-  work2:   S(TOP, EYES, TOP, TOP, WIDE, WIDE, REACH2, LEGS, LEGS, LEGS, LEGS),
-  danceL:  S(TOP_L, EYES_L, TOP_L, TOP_L, WIDE_L, WIDE_L, NARROW_L, LEGS_L, LEGS_L, LEGS_L, LEGS_L),
-  danceR:  S(TOP_R, EYES_R, TOP_R, TOP_R, WIDE_R, WIDE_R, NARROW_R, LEGS_R, LEGS_R, LEGS_R, LEGS_R),
-  heldA:   S(TOP, EYESW, TOP, TOP, WIDE, WIDE, NARROW, LEGS, LEGS, LEG_A),
-  heldB:   S(TOP, EYESW, TOP, TOP, WIDE, WIDE, NARROW, LEGS, LEGS, LEG_B),
-  fall:    S(TOP, EYESW, TOP, TOP, WIDE, WIDE, NARROW, LEGS, LEGS, LEGS),
-  think1:  A(S(...STAND), 2, NOTE_HI),
-  think2:  A(S(...body(EYESC, LEGS, LEGS, LEGS, LEGS)), 1, NOTE_HI),
-  squash:  S(TOP, EYESW, WIDE, WIDE, NARROW, LEGS),
-  windup:  S(TOP_L, EYES_L, TOP_L, TOP_L, WIDE_L, WIDE_L, NARROW_L, LEGS_L, LEGS_L, LEGS_L, LEGS_L),
-  strike:  S(TOP_R, EYES_R, TOP_R, TOP_R, WIDE_R, WIDE_R, NARROW_R,
-             R(["1",3,3],["1",5,5],["1",11,11],["1",13,13]),
-             R(["1",3,3],["1",5,5],["1",12,12],["1",14,14]),
-             R(["1",3,3],["1",5,5],["1",13,13],["1",15,15])),
-  upside:  S(LEGS, LEGS, LEGS, LEGS, NARROW, WIDE, WIDE, TOP, TOP, EYESW, TOP),
-  tuck:    S(TOP, EYESW, TOP, WIDE, WIDE, NARROW, LEG_A, LEG_A),
-  sip:     S(TOP, EYESC, ARM_UP, TOP, WIDE, WIDE, NARROW, LEGS, LEGS, LEGS, LEGS),
-  lieA:    A(S(LIE_TOP, LIE_MID, LIE_LEGS), 8, Z_HI),
-  lieB:    A(S(LIE_TOP, LIE_MID, LIE_LEGS), 7, Z_LO),
+  /* standing, legs together */
+  idle:     S(...B(), LEGS, LEGS),
+  blink:    S(...B(EYES_C), LEGS, LEGS),
+  wideEyed: S(...B(EYES_W), LEGS, LEGS),
 
-  /* ── the ten from the reference sheet ── */
-  deskA:   S(BAND, TOP, PHONES, TOP, TOP, WIDE, WIDE, NARROW, DESK_TOP, DESK_LEG, DESK_LEG),
-  deskB:   S(BAND, TOP, PHONES_C, TOP, TOP, WIDE, REACH, NARROW, DESK_TOP, DESK_LEG, DESK_LEG),
-  sitA:    S(TOP, EYES, TOP, TOP, WIDE, WIDE, SEAT, FEET),
-  sitB:    S(TOP, EYES, TOP, WIDE, WIDE, SEAT, FEET2),
-  chillA:  S(TOP, EYESC, TOP, TOP, WIDE, WIDE, SEAT, FEET),
-  chillB:  S(TOP, EYESC, TOP, WIDE, WIDE, SEAT, FEET2),
-  readA:   S(TOP, EYESC, TOP, TOP, PAGE_A, PAGE_A, NARROW, LEGS, LEGS, LEGS, LEGS),
-  readB:   S(TOP, EYESC, TOP, TOP, PAGE_B, PAGE_A, NARROW, LEGS, LEGS, LEGS, LEGS),
-  stretchA:S(TOP, EYESC, TOP, TOP, ARMS_OUT, WIDE, NARROW, LEGS, LEGS, LEGS, LEGS),
-  stretchB:S(ARMS_UP, TOP, EYESC, TOP, ARMS_OUT, WIDE, NARROW, LEGS, LEGS, LEGS, LEGS),
-  cheerA:  S(ARMS_UP, TOP, EYESW, TOP, TOP, WIDE, WIDE, NARROW, LEGS, LEGS, LEGS),
-  cheerB:  A(S(TOP, EYESW, TOP, TOP, WIDE, WIDE, NARROW, LEGS, LEGS, LEG_A), 2, ARMS_UP),
-  peekA:   S(TOP_L, EYES_L, TOP_L, TOP_L, WIDE_L, WIDE_L, NARROW_L, LEGS_L, LEGS_L, LEGS_L, LEGS_L),
-  peekB:   S(TOP_L, EYESW, TOP_L, WIDE_L, WIDE_L, NARROW_L, LEGS_L, LEGS_L, LEGS_L, LEGS_L),
-  carryA:  A(A(A(S(...body(EYESW, LEGS, LEGS, LEGS)), 1, BOX_TOP), 2, BOX_MID), 3, BOX_TOP),
-  carryB:  A(A(A(S(...body(EYESW, LEGS, LEGS, LEG_A)), 0, BOX_TOP), 1, BOX_MID), 2, BOX_TOP),
-  snackA:  S(TOP, SNACK, TOP, TOP, WIDE, WIDE, NARROW, LEGS, LEGS, LEGS, LEGS),
-  snackB:  S(TOP, SNACK2, TOP, TOP, WIDE, WIDE, NARROW, LEGS, LEGS, LEGS, LEGS),
-  grooveA: A(S(BAND, TOP_L, PHONES, TOP_L, WIDE_L, WIDE_L, NARROW_L, LEGS_L, LEGS_L, LEGS_L, LEGS_L), 2, NOTE_HI),
-  grooveB: A(S(BAND, TOP_R, PHONES_C, TOP_R, WIDE_R, WIDE_R, NARROW_R, LEGS_R, LEGS_R, LEGS_R, LEGS_R), 1, NOTE_LO),
-  napA:    A(S(TOP, EYESC, TOP, WIDE, WIDE, SEAT, FEET), 5, Z_HI),
-  napB:    A(S(TOP, EYESC, TOP, WIDE, WIDE, SEAT, FEET2), 4, Z_LO)
+  /* walking: one pair of legs comes up, the body does not move a pixel */
+  stepA:    S(...B(), LEGS, LEGS_FR),
+  stepB:    S(...B(), LEGS, LEGS_BK),
+  stepC:    S(...B(), LEGS_IN, LEGS_FR),
+  stepD:    S(...B(), LEGS_IN, LEGS_BK),
+
+  /* legs only: tucked for a crouch, long for a leap, splayed for a fall */
+  tuck:     S(...B(EYES_W), LEGS),
+  reachDown:S(...B(EYES_W), LEGS, LEGS, LEGS),
+  splay:    S(...B(EYES_W), LEGS_WIDE, LEGS_WIDE),
+  dangle:   S(...B(EYES_W), LEGS_WIDE, LEGS_FR),
+  dangle2:  S(...B(EYES_W), LEGS_WIDE, LEGS_BK),
+  squash:   S(...B(EYES_W), LEGS_IN),
+
+  /* arms */
+  waveUp:   S(HEAD, ARM_UP_R, BULGE, HIPS, LEGS, LEGS),
+  waveHigh: A(S(HEAD, ARM_UP_R, BULGE, HIPS, LEGS, LEGS), 7, ARM_HIGH_R),
+  reachR:   S(HEAD, EYES, ARM_OUT_R, HIPS, LEGS, LEGS),
+  reachL:   S(HEAD, EYES, ARM_OUT_L, HIPS, LEGS, LEGS),
+  armsOut:  S(HEAD, EYES_C, ARM_OUT_LR, HIPS, LEGS, LEGS),
+  armsUp:   A(S(HEAD, ARM_UP_LR, BULGE, HIPS, LEGS, LEGS), 7, ARM_HIGH_LR),
+  armsUp2:  A(S(HEAD, ARM_UP_LR, BULGE, HIPS, LEGS, LEGS_IN), 7, ARM_HIGH_LR),
+  holdPageA:S(HEAD, EYES_C, ARM_PAGE_A, HIPS, LEGS, LEGS),
+  holdPageB:S(HEAD, EYES_C, ARM_PAGE_B, HIPS, LEGS, LEGS),
+  holdSnack:S(HEAD, EYES, ARM_HOLD, HIPS, LEGS, LEGS),
+  sip:      S(HEAD, ARM_MUG, BULGE, HIPS, LEGS, LEGS),
+
+  /* eyes only */
+  lookL:    S(...B(EYES_L), LEGS, LEGS),
+  lookR:    S(...B(EYES_R), LEGS, LEGS),
+  shut:     S(...B(EYES_C), LEGS, LEGS),
+
+  /* sitting: the legs fold, so he ends up lower — the body is the same body */
+  sitA:     S(...B(), FEET),
+  sitB:     S(...B(EYES_C), FEET),
+
+  /* sleeping */
+  sleepA:   S(...B(EYES_C), LEGS_IN),
+  sleepB:   A(S(...B(EYES_C), LEGS_IN), 7, Z_HI),
+  sleepC:   A(S(...B(EYES_C), LEGS_IN), 6, Z_LO),
+  napA:     A(S(...B(EYES_C), FEET), 8, Z_HI),
+  napB:     A(S(...B(EYES_C), FEET), 7, Z_LO),
+
+  /* kicking: one leg swings forward */
+  kickA:    S(...B(), LEGS, LEGS_KICK),
+  kickB:    S(...B(), LEGS, LEGS_KICK2),
+
+  /* thinking */
+  thinkA:   A(S(...B(), LEGS, LEGS), 7, NOTE_HI),
+  thinkB:   A(S(...B(EYES_C), LEGS, LEGS), 6, NOTE_HI),
+
+  /* headphones sit above and beside the head, never on it */
+  deskA:    A(S(HEAD, EYES_CUPS, BULGE, HIPS, DESK, DESK_LEG), 7, BAND),
+  deskB:    A(S(HEAD, EYES_CUPS_C, ARM_OUT_R, HIPS, DESK, DESK_LEG), 7, BAND),
+  grooveA:  A(A(S(HEAD, EYES_CUPS, BULGE, HIPS, LEGS, LEGS_FR), 7, BAND), 6, NOTE_HI),
+  grooveB:  A(A(S(HEAD, EYES_CUPS, BULGE, HIPS, LEGS, LEGS_BK), 7, BAND), 6, NOTE_LO),
+
+  /* carrying: the box rides above him */
+  carryA:   A(A(S(HEAD, EYES_W, ARM_OUT_LR, HIPS, LEGS, LEGS), 6, BOX_TOP), 7, BOX_MID),
+  carryB:   A(A(S(HEAD, EYES_W, ARM_OUT_LR, HIPS, LEGS, LEGS_FR), 6, BOX_TOP), 7, BOX_MID)
 };
 
 /* ---------- the animation library ---------- */
 
 const DEFAULT_ANIMATIONS = {
-  idle:  { name: "idle",  builtin: true, fps: 4,  loop: true,  bob: [0,0,0,0,0,0,0,0],
-           frames: [F.idle,F.idle,F.idle,F.breathe,F.idle,F.idle,F.idle,F.blink] },
-  walk:  { name: "walk",  builtin: true, fps: 8,  loop: true,  bob: [0,-1,0,-1],
-           frames: [F.idle,F.stepA,F.idle,F.stepB] },
-  run:   { name: "run",   builtin: true, fps: 14, loop: true,  bob: [0,-2,0,-2],
-           frames: [F.idle,F.stepA,F.idle,F.stepB] },
-  jump:  { name: "jump",  builtin: true, fps: 8,  loop: true,  bob: [0,-3,-4,-1],
-           frames: [F.crouch,F.stretchUp,F.stretchUp,F.crouch] },
+  idle:  { name: "idle",  builtin: true, fps: 3,  loop: true,  bob: [0,0,0,0,0,0],
+           frames: [F.idle,F.idle,F.idle,F.idle,F.blink,F.idle] },
+  walk:  { name: "walk",  builtin: true, fps: 8,  loop: true,  bob: [0,0,0,0],
+           frames: [F.stepA,F.idle,F.stepB,F.idle] },
+  run:   { name: "run",   builtin: true, fps: 14, loop: true,  bob: [0,0,0,0],
+           frames: [F.stepC,F.stepA,F.stepD,F.stepB] },
+  jump:  { name: "jump",  builtin: true, fps: 8,  loop: true,  bob: [0,0,0,0],
+           frames: [F.tuck,F.reachDown,F.reachDown,F.tuck] },
   sleep: { name: "sleep", builtin: true, fps: 1.5,loop: true,  bob: [0,0,0],
            frames: [F.sleepA,F.sleepB,F.sleepC] },
   wave:  { name: "wave",  builtin: true, fps: 6,  loop: true,  bob: [0,0,0,0],
-           frames: [F.idle,F.wave1,F.wave2,F.wave1] },
+           frames: [F.idle,F.waveUp,F.waveHigh,F.waveUp] },
   work:  { name: "work",  builtin: true, fps: 7,  loop: true,  bob: [0,0,0,0],
-           frames: [F.work1,F.work2,F.work1,F.idle] },
-  dance: { name: "dance", builtin: true, fps: 8,  loop: true,  bob: [0,-1,0,-1],
-           frames: [F.danceL,F.idle,F.danceR,F.idle] },
+           frames: [F.reachR,F.idle,F.reachR,F.idle] },
+  dance: { name: "dance", builtin: true, fps: 8,  loop: true,  bob: [0,0,0,0],
+           frames: [F.stepA,F.reachR,F.stepB,F.reachL] },
   think: { name: "think", builtin: true, fps: 2,  loop: true,  bob: [0,0,0,0],
-           frames: [F.idle,F.think1,F.think2,F.think1] },
-  held:  { name: "held",  builtin: true, fps: 5,  loop: true,  bob: [0,-1],
-           frames: [F.heldA,F.heldB] },
+           frames: [F.idle,F.thinkA,F.thinkB,F.thinkA] },
+  held:  { name: "held",  builtin: true, fps: 5,  loop: true,  bob: [0,0],
+           frames: [F.dangle,F.dangle2] },
   fall:  { name: "fall",  builtin: true, fps: 6,  loop: true,  bob: [0,0],
-           frames: [F.fall,F.fall] },
+           frames: [F.splay,F.splay] },
   land:  { name: "land",  builtin: true, fps: 10, loop: false, bob: [0,0,0],
-           frames: [F.squash,F.crouch,F.idle] },
-  kick:  { name: "kick",  builtin: true, fps: 10, loop: false, bob: [0,-1,0,0],
-           frames: [F.windup,F.strike,F.strike,F.idle] },
-  flip:  { name: "flip",  builtin: true, fps: 11, loop: false, bob: [0,-4,-7,-3,0],
-           frames: [F.crouch,F.tuck,F.upside,F.tuck,F.crouch] },
+           frames: [F.squash,F.tuck,F.idle] },
+  kick:  { name: "kick",  builtin: true, fps: 10, loop: false, bob: [0,0,0,0],
+           frames: [F.stepB,F.kickA,F.kickB,F.idle] },
+  flip:  { name: "hop",   builtin: true, fps: 11, loop: false, bob: [0,-3,-5,-2,0],
+           frames: [F.tuck,F.tuck,F.reachDown,F.tuck,F.idle] },
   drink: { name: "drink", builtin: true, fps: 3,  loop: true,  bob: [0,0,0,0],
            frames: [F.idle,F.sip,F.sip,F.idle] },
-  abed:  { name: "in bed",builtin: true, fps: 1.2,loop: true,  bob: [0,0,-1,0],
-           frames: [F.lieA,F.lieB,F.lieA,F.lieB] },
+  abed:  { name: "in bed",builtin: true, fps: 1.2,loop: true,  bob: [0,0,0,0],
+           frames: [F.napA,F.napB,F.napA,F.napB] },
 
-  /* ── ten more, from how the character is actually drawn ── */
   desk:  { name: "at the desk", builtin: true, fps: 5, loop: true, bob: [0,0,0,0],
            frames: [F.deskA,F.deskB,F.deskA,F.deskB] },
-  chill: { name: "chilling",    builtin: true, fps: 1.4, loop: true, bob: [0,-1,0,-1],
-           frames: [F.chillA,F.chillB,F.chillA,F.chillB] },
-  sit:   { name: "sitting",     builtin: true, fps: 1.6, loop: true, bob: [0,-1],
-           frames: [F.sitA,F.sitB] },
+  chill: { name: "chilling",    builtin: true, fps: 1.4, loop: true, bob: [0,0,0,0],
+           frames: [F.sitA,F.sitB,F.sitA,F.sitA] },
+  sit:   { name: "sitting",     builtin: true, fps: 1.6, loop: true, bob: [0,0],
+           frames: [F.sitA,F.sitA] },
   read:  { name: "reading",     builtin: true, fps: 1.6, loop: true, bob: [0,0,0],
-           frames: [F.readA,F.readA,F.readB] },
-  stretch:{ name: "stretching", builtin: true, fps: 2.5, loop: true, bob: [0,-1,-1,0],
-           frames: [F.idle,F.stretchA,F.stretchB,F.stretchA] },
-  cheer: { name: "celebrating", builtin: true, fps: 9, loop: true, bob: [0,-3,0,-3],
-           frames: [F.cheerA,F.cheerB,F.cheerA,F.cheerB] },
-  peek:  { name: "peeking",     builtin: true, fps: 2, loop: true, bob: [0,0,0,0],
-           frames: [F.idle,F.peekA,F.peekB,F.peekA] },
-  carry: { name: "carrying",    builtin: true, fps: 6, loop: true, bob: [0,-1,0,-1],
+           frames: [F.holdPageA,F.holdPageA,F.holdPageB] },
+  stretch:{ name: "stretching", builtin: true, fps: 2.5, loop: true, bob: [0,0,0,0],
+           frames: [F.idle,F.armsOut,F.armsOut,F.idle] },
+  cheer: { name: "celebrating", builtin: true, fps: 9, loop: true, bob: [0,0,0,0],
+           frames: [F.armsUp,F.armsUp2,F.armsUp,F.armsUp2] },
+  peek:  { name: "looking round",builtin: true, fps: 1.6, loop: true, bob: [0,0,0,0],
+           frames: [F.lookL,F.idle,F.lookR,F.idle] },
+  carry: { name: "carrying",    builtin: true, fps: 6, loop: true, bob: [0,0,0,0],
            frames: [F.carryA,F.carryB,F.carryA,F.carryB] },
   snack: { name: "snacking",    builtin: true, fps: 3, loop: true, bob: [0,0,0,0],
-           frames: [F.snackA,F.snackB,F.snackA,F.idle] },
-  groove:{ name: "grooving",    builtin: true, fps: 7, loop: true, bob: [0,-1,0,-1],
+           frames: [F.holdSnack,F.shut,F.holdSnack,F.idle] },
+  groove:{ name: "grooving",    builtin: true, fps: 7, loop: true, bob: [0,0,0,0],
            frames: [F.grooveA,F.grooveB,F.grooveA,F.grooveB] },
   nap:   { name: "dozing",      builtin: true, fps: 1.2, loop: true, bob: [0,0],
            frames: [F.napA,F.napB] }
@@ -501,10 +494,12 @@ function drawStanding(ctx, frame, o) {
 
 /* ---------- state ---------- */
 
+const SPRITE_VERSION = 2;
+
 const DEFAULT_STATE = {
-  version: 1,
+  version: SPRITE_VERSION,
   name: "Claude",
-  look: { scale: 3.6, colors: Object.assign({}, DEFAULT_COLORS), shadow: true, opacity: 1 },
+  look: { scale: 4.8, colors: Object.assign({}, DEFAULT_COLORS), shadow: true, opacity: 1 },
   behavior: {
     energy: 0.5,          /* how often he decides to do something          */
     walkSpeed: 26,        /* screen px per second                          */
@@ -563,6 +558,9 @@ function mergeState(saved) {
   if (!saved || typeof saved !== "object") return s;
   if (typeof saved.name === "string" && saved.name.trim()) s.name = saved.name.slice(0, 24);
   Object.assign(s.look, saved.look || {});
+  /* He used to be eleven rows tall and is now six, so a size chosen for the old
+     shape would leave him a smudge. Reset it once, and only once. */
+  if (saved.version !== SPRITE_VERSION) s.look.scale = DEFAULT_STATE.look.scale;
   s.look.colors = Object.assign({}, DEFAULT_COLORS, (saved.look && saved.look.colors) || {});
   Object.assign(s.behavior, saved.behavior || {});
   if (Array.isArray(saved.behavior && saved.behavior.phrases)) s.behavior.phrases = saved.behavior.phrases.slice(0, 40);
@@ -594,10 +592,17 @@ function animationsOf(state) {
 
 function blankFrame() { return normalizeFrame([]); }
 
+/* Which row the drawing actually starts on — he is six rows tall standing and
+   fewer sitting, so anything placed above his head has to ask. */
+function topRowOf(frame) {
+  for (let y = 0; y < GRID; y++) if (/[^.]/.test(frame[y] || "")) return y;
+  return GRID - 1;
+}
+
 if (typeof window !== "undefined") {
   window.CB = {
     GRID, F, DEFAULT_ANIMATIONS, DEFAULT_ROTATION, DEFAULT_COLORS, DEFAULT_STATE, REQUIRED,
-    FOOT_ROW, PROPS, PROP_PALETTE, drawProp, drawBall, BALL_COLORS, normalizeAnim, normalizeFrame, blankFrame, drawFrame, drawShadow, drawStanding,
+    FOOT_ROW, SPRITE_VERSION, PROPS, PROP_PALETTE, drawProp, topRowOf, drawBall, BALL_COLORS, normalizeAnim, normalizeFrame, blankFrame, drawFrame, drawShadow, drawStanding,
     paletteFor, resolveColors, mergeState, animationsOf, mix, hexToRgb, rgbToHex
   };
 }
