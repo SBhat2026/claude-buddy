@@ -4,64 +4,154 @@
    '.' transparent   '1' body   '2' shade   '3' light   '0' dark (eyes)   'w' white
    Every frame is 16 rows of 16 characters.                                        */
 
-const BLANK = "................";
-const BODY  = "....11111111....";
-const HIPS  = "...1111111111...";
-const EYES  = "....11011011....";
-const EYESC = "....11211211....";
-const EYESW = "....10011001....";
-const ARMS  = "..111111111111..";
-const LEGS  = "...1.1....1.1...";
-const LEG_A = "...1.1..........";
-const LEG_B = "..........1.1...";
-const BODY_L = "...11111111.....";
-const EYES_L = "...11011011.....";
-const ARMS_L = ".111111111111...";
-const LEGS_L = "..1.1....1.1....";
-const BODY_R = ".....11111111...";
-const EYES_R = ".....11011011...";
-const ARMS_R = "...111111111111.";
-const LEGS_R = "....1.1....1.1..";
-const ARM_UP1 = "....11111111.11.";
-const ARM_UP2 = "....11111111..11";
-const REACH   = "....1111111111..";
-const REACH2  = "....11111111.1..";
+/* ---------- the character ----------
+   The proportions are not invented. Claude Code draws Clawd in the terminal with
+   quadrant blocks, and decoded to pixels that art is:
 
+       .############.     12 wide
+       .##.######.##.     the eyes are NOTCHES, at the outer thirds
+       #############.     13 wide — the widest row
+       .##########...     10 wide
+       #.#....#.#....     four legs, two pairs, a four-cell gap between them
+
+   So: a solid block that bulges by one cell rather than a narrow body with arms
+   bolted on, eyes set wide rather than centred, and the right pair of legs tucked
+   in from the edge. Those horizontal proportions are copied exactly here, mapping
+   the original's 13 columns onto columns 2-14 of this grid.
+
+   The one deliberate departure is height. The original is 13x5, which is too flat
+   to walk, sit, or lie down without the legs being the whole animation; this is
+   13x8, which keeps the silhouette and leaves room to move.                     */
+
+/* Paint spans into a 16-wide row: R(["1", 3, 14]) fills columns 3 to 14. */
+function R(...spans) {
+  const row = new Array(16).fill(".");
+  for (const [ch, from, to] of spans) {
+    for (let x = Math.max(0, from); x <= Math.min(to, 15); x++) row[x] = ch;
+  }
+  return row.join("");
+}
+
+const BLANK  = R();
+const TOP    = R(["1", 3, 14]);                                   /* 12 wide      */
+const EYES   = R(["1", 3, 14], ["0", 5, 5], ["0", 12, 12]);       /* set wide     */
+const EYESC  = R(["1", 3, 14], ["2", 5, 5], ["2", 12, 12]);       /* shut         */
+const EYESW  = R(["1", 3, 14], ["0", 4, 5], ["0", 12, 13]);       /* wide open    */
+const WIDE   = R(["1", 2, 14]);                                   /* 13 wide      */
+const NARROW = R(["1", 3, 12]);                                   /* 10 wide      */
+const LEGS   = R(["1", 2, 2], ["1", 4, 4], ["1", 9, 9], ["1", 11, 11]);
+const LEG_A  = R(["1", 2, 2], ["1", 4, 4]);                       /* front pair   */
+const LEG_B  = R(["1", 9, 9], ["1", 11, 11]);                     /* back pair    */
+
+/* leaning a cell either way, for dancing and peering round things */
+const TOP_L    = R(["1", 2, 13]);
+const EYES_L   = R(["1", 2, 13], ["0", 4, 4], ["0", 11, 11]);
+const WIDE_L   = R(["1", 1, 13]);
+const NARROW_L = R(["1", 2, 11]);
+const LEGS_L   = R(["1", 1, 1], ["1", 3, 3], ["1", 8, 8], ["1", 10, 10]);
+const TOP_R    = R(["1", 4, 15]);
+const EYES_R   = R(["1", 4, 15], ["0", 6, 6], ["0", 13, 13]);
+const WIDE_R   = R(["1", 3, 15]);
+const NARROW_R = R(["1", 4, 13]);
+const LEGS_R   = R(["1", 3, 3], ["1", 5, 5], ["1", 10, 10], ["1", 12, 12]);
+
+/* arms, such as they are: the bulge row reaching further out */
+const ARM_UP    = R(["1", 3, 14], ["1", 15, 15]);
+const ARM_HIGH  = R(["1", 3, 14], ["1", 15, 15], ["1", 14, 14]);
+const ARMS_OUT  = R(["1", 1, 15]);
+const ARMS_UP   = R(["1", 3, 3], ["1", 14, 14]);   /* raised, and still attached */
+const REACH     = R(["1", 2, 14], ["1", 15, 15]);
+const REACH2    = R(["1", 2, 14], ["1", 15, 15], ["1", 0, 0]);
+
+/* headphones: a band over the top and a cup either side of the head */
+const BAND      = R(["0", 6, 11]);                 /* the headband, over the crown */
+const PHONES    = R(["1", 3, 14], ["0", 5, 5], ["0", 12, 12], ["0", 2, 2], ["0", 15, 15]);
+const PHONES_C  = R(["1", 3, 14], ["2", 5, 5], ["2", 12, 12], ["0", 2, 2], ["0", 15, 15]);
+
+/* a desk he sits behind, drawn in the frame rather than as a prop so his hands
+   can rest on it */
+const DESK_TOP  = R(["0", 0, 15]);
+const DESK_LEG  = R(["2", 1, 2], ["2", 13, 14]);
+
+/* sitting: the block settles, and two feet come out in front */
+const SEAT      = R(["1", 3, 12]);
+const FEET      = R(["1", 3, 4], ["1", 12, 14]);
+const FEET2     = R(["1", 3, 4], ["1", 11, 13]);
+
+/* things he holds */
+const PAGE_A    = R(["1", 2, 12], ["w", 13, 15]);
+const PAGE_B    = R(["1", 2, 12], ["w", 13, 14], ["0", 15, 15]);
+const BOX_TOP   = R(["0", 5, 12]);
+const BOX_MID   = R(["0", 5, 5], ["3", 6, 11], ["0", 12, 12]);
+const SNACK     = R(["1", 3, 14], ["0", 5, 5], ["0", 12, 12], ["3", 15, 15]);
+const SNACK2    = R(["1", 3, 14], ["2", 5, 5], ["2", 12, 12], ["3", 14, 15]);
+const NOTE_HI   = R(["3", 13, 13]);
+const NOTE_LO   = R(["3", 1, 1]);
+
+/* lying down: head to the left, eye shut, legs folded under */
+const LIE_TOP   = R(["1", 2, 12]);
+const LIE_MID   = R(["1", 1, 13], ["2", 2, 2]);
+const LIE_LEGS  = R(["1", 3, 3], ["1", 5, 5], ["1", 9, 9], ["1", 11, 11]);
+const Z_HI      = R(["0", 13, 13]);
+const Z_LO      = R(["0", 14, 14]);
+
+/* The standing stack, which almost everything is a variation of: two rows of head,
+   the eyes, another row, the bulge, the narrow row, and two rows of legs. */
 const F = {
-  idle:   [BLANK,BLANK,BLANK,BODY,BODY,EYES,BODY,BODY,ARMS,ARMS,HIPS,LEGS,LEGS,LEGS,BLANK,BLANK],
-  breathe:[BLANK,BLANK,BLANK,BLANK,BODY,BODY,EYES,BODY,ARMS,ARMS,BODY,HIPS,LEGS,LEGS,BLANK,BLANK],
-  blink:  [BLANK,BLANK,BLANK,BODY,BODY,EYESC,BODY,BODY,ARMS,ARMS,HIPS,LEGS,LEGS,LEGS,BLANK,BLANK],
-  stepA:  [BLANK,BLANK,BLANK,BODY,BODY,EYES,BODY,BODY,ARMS,ARMS,HIPS,LEGS,LEGS,LEG_A,BLANK,BLANK],
-  stepB:  [BLANK,BLANK,BLANK,BODY,BODY,EYES,BODY,BODY,ARMS,ARMS,HIPS,LEGS,LEGS,LEG_B,BLANK,BLANK],
-  crouch: [BLANK,BLANK,BLANK,BLANK,BODY,BODY,EYESW,BODY,ARMS,ARMS,BODY,HIPS,LEGS,LEGS,BLANK,BLANK],
-  stretch:[BLANK,BLANK,BODY,BODY,EYESW,BODY,BODY,ARMS,ARMS,HIPS,LEGS,LEGS,LEGS,LEGS,BLANK,BLANK],
-  sleepA: [BLANK,BLANK,BLANK,BLANK,BLANK,BODY,BODY,EYESC,ARMS,ARMS,HIPS,LEGS,LEGS,BLANK,BLANK,BLANK],
-  sleepB: [BLANK,BLANK,BLANK,"..............0.",BLANK,BODY,BODY,EYESC,ARMS,ARMS,HIPS,LEGS,LEGS,BLANK,BLANK,BLANK],
-  sleepC: [BLANK,BLANK,".............0..",BLANK,BLANK,BODY,BODY,EYESC,ARMS,ARMS,HIPS,LEGS,LEGS,BLANK,BLANK,BLANK],
-  wave1:  [BLANK,BLANK,BLANK,BODY,BODY,EYES,ARM_UP1,ARM_UP1,ARMS,ARMS,HIPS,LEGS,LEGS,LEGS,BLANK,BLANK],
-  wave2:  [BLANK,BLANK,BLANK,BODY,BODY,EYES,ARM_UP2,ARM_UP1,ARMS,ARMS,HIPS,LEGS,LEGS,LEGS,BLANK,BLANK],
-  work1:  [BLANK,BLANK,BLANK,BODY,BODY,EYES,BODY,BODY,ARMS,ARMS,REACH,LEGS,LEGS,LEGS,BLANK,BLANK],
-  work2:  [BLANK,BLANK,BLANK,BODY,BODY,EYES,BODY,BODY,ARMS,ARMS,REACH2,LEGS,LEGS,LEGS,BLANK,BLANK],
-  danceL: [BLANK,BLANK,BLANK,BODY_L,BODY_L,EYES_L,BODY_L,BODY_L,ARMS_L,ARMS_L,BODY_L,LEGS_L,LEGS_L,LEGS_L,BLANK,BLANK],
-  danceR: [BLANK,BLANK,BLANK,BODY_R,BODY_R,EYES_R,BODY_R,BODY_R,ARMS_R,ARMS_R,BODY_R,LEGS_R,LEGS_R,LEGS_R,BLANK,BLANK],
-  heldA:  [BLANK,BLANK,BODY,BODY,EYESW,BODY,BODY,ARMS,ARMS,HIPS,LEGS,LEGS,LEG_A,BLANK,BLANK,BLANK],
-  heldB:  [BLANK,BLANK,BODY,BODY,EYESW,BODY,BODY,ARMS,ARMS,HIPS,LEGS,LEGS,LEG_B,BLANK,BLANK,BLANK],
-  fall:   [BLANK,BLANK,BLANK,BODY,BODY,EYESW,BODY,BODY,ARMS,ARMS,HIPS,LEGS,LEGS,BLANK,BLANK,BLANK],
-  think1: [BLANK,".........0......",BLANK,BODY,BODY,EYES,BODY,BODY,ARMS,ARMS,HIPS,LEGS,LEGS,LEGS,BLANK,BLANK],
-  think2: [BLANK,"........000.....",BLANK,BODY,BODY,EYESC,BODY,BODY,ARMS,ARMS,HIPS,LEGS,LEGS,LEGS,BLANK,BLANK],
-  squash: [BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,BODY,BODY,EYESW,ARMS,ARMS,ARMS,LEGS,LEGS,BLANK,BLANK],
-  windup: [BLANK,BLANK,BLANK,BODY_L,BODY_L,EYES_L,BODY_L,BODY_L,ARMS_L,ARMS_L,BODY_L,LEGS_L,LEGS_L,LEGS_L,BLANK,BLANK],
-  strike: [BLANK,BLANK,BLANK,BODY_R,BODY_R,EYES_R,BODY_R,BODY_R,ARMS_R,ARMS_R,HIPS,
-           "....1.1....1.1..", "....1.1.....1.1.", "....1.1......1.1",BLANK,BLANK],
-  upside: [BLANK,BLANK,LEGS,LEGS,LEGS,BODY,ARMS,ARMS,BODY,BODY,EYESW,BODY,BODY,BLANK,BLANK,BLANK],
-  tuck:   [BLANK,BLANK,BLANK,BLANK,BODY,BODY,EYESW,BODY,ARMS,ARMS,HIPS,LEG_A,BLANK,BLANK,BLANK,BLANK],
-  sip:    [BLANK,BLANK,BLANK,BODY,BODY,EYESC,ARM_UP1,BODY,ARMS,ARMS,HIPS,LEGS,LEGS,LEGS,BLANK,BLANK],
-  /* Lying down: head to the left, eye shut, legs folded under him. Row 13 is the
-     mattress, because row 14 is where the floor is. */
-  lieA:   [BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,".............0..",BLANK,
-           "...11111111.....", "..2111111111....", "...1.1..1.1.....",BLANK,BLANK],
-  lieB:   [BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,"..............0.",BLANK,BLANK,
-           "...11111111.....", "..2111111111....", "...1.1..1.1.....",BLANK,BLANK]
+  idle:    [BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,TOP,EYES,TOP,WIDE,WIDE,NARROW,LEGS,LEGS,BLANK,BLANK],
+  blink:   [BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,TOP,EYESC,TOP,WIDE,WIDE,NARROW,LEGS,LEGS,BLANK,BLANK],
+  breathe: [BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,TOP,EYES,TOP,WIDE,WIDE,NARROW,LEGS,BLANK,BLANK],
+  stepA:   [BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,TOP,EYES,TOP,WIDE,WIDE,NARROW,LEGS,LEG_A,BLANK,BLANK],
+  stepB:   [BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,TOP,EYES,TOP,WIDE,WIDE,NARROW,LEGS,LEG_B,BLANK,BLANK],
+  crouch:  [BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,TOP,EYESW,TOP,WIDE,WIDE,NARROW,LEGS,BLANK,BLANK],
+  stretchUp:[BLANK,BLANK,BLANK,BLANK,BLANK,TOP,EYESW,TOP,WIDE,WIDE,NARROW,LEGS,LEGS,LEGS,BLANK,BLANK],
+  sleepA:  [BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,TOP,EYESC,WIDE,WIDE,NARROW,LEGS,BLANK,BLANK],
+  sleepB:  [BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,Z_HI,BLANK,TOP,EYESC,WIDE,WIDE,NARROW,LEGS,BLANK,BLANK],
+  sleepC:  [BLANK,BLANK,BLANK,BLANK,BLANK,Z_LO,BLANK,BLANK,TOP,EYESC,WIDE,WIDE,NARROW,LEGS,BLANK,BLANK],
+  wave1:   [BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,TOP,EYES,ARM_UP,WIDE,WIDE,NARROW,LEGS,LEGS,BLANK,BLANK],
+  wave2:   [BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,ARM_UP,EYES,ARM_HIGH,WIDE,WIDE,NARROW,LEGS,LEGS,BLANK,BLANK],
+  work1:   [BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,TOP,EYES,TOP,WIDE,WIDE,REACH,LEGS,LEGS,BLANK,BLANK],
+  work2:   [BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,TOP,EYES,TOP,WIDE,WIDE,REACH2,LEGS,LEGS,BLANK,BLANK],
+  danceL:  [BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,TOP_L,EYES_L,TOP_L,WIDE_L,WIDE_L,NARROW_L,LEGS_L,LEGS_L,BLANK,BLANK],
+  danceR:  [BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,TOP_R,EYES_R,TOP_R,WIDE_R,WIDE_R,NARROW_R,LEGS_R,LEGS_R,BLANK,BLANK],
+  heldA:   [BLANK,BLANK,BLANK,BLANK,BLANK,TOP,EYESW,TOP,WIDE,WIDE,NARROW,LEGS,LEG_A,BLANK,BLANK,BLANK],
+  heldB:   [BLANK,BLANK,BLANK,BLANK,BLANK,TOP,EYESW,TOP,WIDE,WIDE,NARROW,LEGS,LEG_B,BLANK,BLANK,BLANK],
+  fall:    [BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,TOP,EYESW,TOP,WIDE,WIDE,NARROW,LEGS,BLANK,BLANK,BLANK],
+  think1:  [BLANK,BLANK,BLANK,BLANK,NOTE_HI,BLANK,TOP,EYES,TOP,WIDE,WIDE,NARROW,LEGS,LEGS,BLANK,BLANK],
+  think2:  [BLANK,BLANK,BLANK,NOTE_HI,BLANK,BLANK,TOP,EYESC,TOP,WIDE,WIDE,NARROW,LEGS,LEGS,BLANK,BLANK],
+  squash:  [BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,TOP,EYESW,WIDE,WIDE,NARROW,BLANK,BLANK],
+  windup:  [BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,TOP_L,EYES_L,TOP_L,WIDE_L,WIDE_L,NARROW_L,LEGS_L,LEGS_L,BLANK,BLANK],
+  strike:  [BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,TOP_R,EYES_R,TOP_R,WIDE_R,WIDE_R,NARROW_R,
+            R(["1",3,3],["1",5,5],["1",11,11],["1",13,13]), R(["1",3,3],["1",5,5],["1",12,12],["1",14,14]),BLANK,BLANK],
+  upside:  [BLANK,BLANK,LEGS,LEGS,NARROW,WIDE,WIDE,TOP,EYESW,TOP,BLANK,BLANK,BLANK,BLANK,BLANK,BLANK],
+  tuck:    [BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,TOP,EYESW,WIDE,WIDE,NARROW,LEG_A,BLANK,BLANK,BLANK],
+  sip:     [BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,TOP,EYESC,ARM_UP,WIDE,WIDE,NARROW,LEGS,LEGS,BLANK,BLANK],
+  lieA:    [BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,Z_HI,BLANK,LIE_TOP,LIE_MID,LIE_LEGS,BLANK,BLANK],
+  lieB:    [BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,Z_LO,BLANK,BLANK,LIE_TOP,LIE_MID,LIE_LEGS,BLANK,BLANK],
+
+  /* ── the ten from the reference sheet ── */
+  deskA:   [BLANK,BLANK,BLANK,BLANK,BAND,TOP,PHONES,TOP,WIDE,WIDE,NARROW,DESK_TOP,DESK_LEG,DESK_LEG,BLANK,BLANK],
+  deskB:   [BLANK,BLANK,BLANK,BLANK,BAND,TOP,PHONES_C,TOP,WIDE,REACH,NARROW,DESK_TOP,DESK_LEG,DESK_LEG,BLANK,BLANK],
+  sitA:    [BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,TOP,EYES,TOP,WIDE,SEAT,FEET,BLANK,BLANK],
+  sitB:    [BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,TOP,EYES,WIDE,SEAT,FEET2,BLANK,BLANK],
+  chillA:  [BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,TOP,EYESC,TOP,WIDE,SEAT,FEET,BLANK,BLANK],
+  chillB:  [BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,TOP,EYESC,WIDE,SEAT,FEET2,BLANK,BLANK],
+  readA:   [BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,TOP,EYESC,TOP,PAGE_A,PAGE_A,NARROW,LEGS,LEGS,BLANK,BLANK],
+  readB:   [BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,TOP,EYESC,TOP,PAGE_B,PAGE_A,NARROW,LEGS,LEGS,BLANK,BLANK],
+  stretchA:[BLANK,BLANK,BLANK,BLANK,BLANK,TOP,EYESC,TOP,ARMS_OUT,WIDE,NARROW,LEGS,LEGS,LEGS,BLANK,BLANK],
+  stretchB:[BLANK,BLANK,BLANK,BLANK,ARMS_UP,TOP,EYESC,TOP,ARMS_OUT,WIDE,NARROW,LEGS,LEGS,LEGS,BLANK,BLANK],
+  cheerA:  [BLANK,BLANK,BLANK,BLANK,BLANK,ARMS_UP,TOP,EYESW,TOP,WIDE,WIDE,NARROW,LEGS,LEGS,BLANK,BLANK],
+  cheerB:  [BLANK,BLANK,BLANK,BLANK,ARMS_UP,BLANK,TOP,EYESW,TOP,WIDE,WIDE,NARROW,LEG_A,LEG_A,BLANK,BLANK],
+  peekA:   [BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,TOP_L,EYES_L,TOP_L,WIDE_L,WIDE_L,NARROW_L,LEGS_L,LEGS_L,BLANK,BLANK],
+  peekB:   [BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,TOP_L,EYESW,TOP_L,WIDE_L,NARROW_L,LEGS_L,LEGS_L,BLANK,BLANK],
+  carryA:  [BLANK,BLANK,BLANK,BOX_TOP,BOX_MID,BOX_TOP,TOP,EYESW,TOP,WIDE,WIDE,NARROW,LEGS,LEGS,BLANK,BLANK],
+  carryB:  [BLANK,BLANK,BOX_TOP,BOX_MID,BOX_TOP,BLANK,TOP,EYESW,TOP,WIDE,WIDE,NARROW,LEGS,LEG_A,BLANK,BLANK],
+  snackA:  [BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,TOP,SNACK,TOP,WIDE,WIDE,NARROW,LEGS,LEGS,BLANK,BLANK],
+  snackB:  [BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,TOP,SNACK2,TOP,WIDE,WIDE,NARROW,LEGS,LEGS,BLANK,BLANK],
+  grooveA: [BLANK,BLANK,BLANK,NOTE_HI,BLANK,BAND,TOP_L,PHONES,TOP_L,WIDE_L,WIDE_L,NARROW_L,LEGS_L,LEGS_L,BLANK,BLANK],
+  grooveB: [BLANK,BLANK,NOTE_LO,BLANK,BLANK,BAND,TOP_R,PHONES_C,TOP_R,WIDE_R,WIDE_R,NARROW_R,LEGS_R,LEGS_R,BLANK,BLANK],
+  napA:    [BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,Z_HI,BLANK,TOP,EYESC,WIDE,SEAT,FEET,BLANK,BLANK],
+  napB:    [BLANK,BLANK,BLANK,BLANK,BLANK,BLANK,Z_LO,BLANK,BLANK,TOP,EYESC,WIDE,SEAT,FEET2,BLANK,BLANK]
 };
 
 /* ---------- the animation library ---------- */
@@ -74,7 +164,7 @@ const DEFAULT_ANIMATIONS = {
   run:   { name: "run",   builtin: true, fps: 14, loop: true,  bob: [0,-2,0,-2],
            frames: [F.idle,F.stepA,F.idle,F.stepB] },
   jump:  { name: "jump",  builtin: true, fps: 8,  loop: true,  bob: [0,-3,-4,-1],
-           frames: [F.crouch,F.stretch,F.stretch,F.crouch] },
+           frames: [F.crouch,F.stretchUp,F.stretchUp,F.crouch] },
   sleep: { name: "sleep", builtin: true, fps: 1.5,loop: true,  bob: [0,0,0],
            frames: [F.sleepA,F.sleepB,F.sleepC] },
   wave:  { name: "wave",  builtin: true, fps: 6,  loop: true,  bob: [0,0,0,0],
@@ -85,7 +175,7 @@ const DEFAULT_ANIMATIONS = {
            frames: [F.danceL,F.idle,F.danceR,F.idle] },
   think: { name: "think", builtin: true, fps: 2,  loop: true,  bob: [0,0,0,0],
            frames: [F.idle,F.think1,F.think2,F.think1] },
-  held:  { name: "held",  builtin: true, fps: 5,  loop: true,  bob: [0,-1,0,-1],
+  held:  { name: "held",  builtin: true, fps: 5,  loop: true,  bob: [0,-1],
            frames: [F.heldA,F.heldB] },
   fall:  { name: "fall",  builtin: true, fps: 6,  loop: true,  bob: [0,0],
            frames: [F.fall,F.fall] },
@@ -94,18 +184,42 @@ const DEFAULT_ANIMATIONS = {
   kick:  { name: "kick",  builtin: true, fps: 10, loop: false, bob: [0,-1,0,0],
            frames: [F.windup,F.strike,F.strike,F.idle] },
   flip:  { name: "flip",  builtin: true, fps: 11, loop: false, bob: [0,-4,-7,-3,0],
-           frames: [F.crouch,F.tuck,F.upside,F.tuck,F.land ? F.crouch : F.crouch] },
+           frames: [F.crouch,F.tuck,F.upside,F.tuck,F.crouch] },
   drink: { name: "drink", builtin: true, fps: 3,  loop: true,  bob: [0,0,0,0],
            frames: [F.idle,F.sip,F.sip,F.idle] },
-  abed:  { name: "in bed", builtin: true, fps: 1.2, loop: true, bob: [0,0,-1,0],
-           frames: [F.lieA,F.lieB,F.lieA,F.lieB] }
+  abed:  { name: "in bed",builtin: true, fps: 1.2,loop: true,  bob: [0,0,-1,0],
+           frames: [F.lieA,F.lieB,F.lieA,F.lieB] },
+
+  /* ── ten more, from how the character is actually drawn ── */
+  desk:  { name: "at the desk", builtin: true, fps: 5, loop: true, bob: [0,0,0,0],
+           frames: [F.deskA,F.deskB,F.deskA,F.deskB] },
+  chill: { name: "chilling",    builtin: true, fps: 1.4, loop: true, bob: [0,-1,0,-1],
+           frames: [F.chillA,F.chillB,F.chillA,F.chillB] },
+  sit:   { name: "sitting",     builtin: true, fps: 1.6, loop: true, bob: [0,-1],
+           frames: [F.sitA,F.sitB] },
+  read:  { name: "reading",     builtin: true, fps: 1.6, loop: true, bob: [0,0,0],
+           frames: [F.readA,F.readA,F.readB] },
+  stretch:{ name: "stretching", builtin: true, fps: 2.5, loop: true, bob: [0,-1,-1,0],
+           frames: [F.idle,F.stretchA,F.stretchB,F.stretchA] },
+  cheer: { name: "celebrating", builtin: true, fps: 9, loop: true, bob: [0,-3,0,-3],
+           frames: [F.cheerA,F.cheerB,F.cheerA,F.cheerB] },
+  peek:  { name: "peeking",     builtin: true, fps: 2, loop: true, bob: [0,0,0,0],
+           frames: [F.idle,F.peekA,F.peekB,F.peekA] },
+  carry: { name: "carrying",    builtin: true, fps: 6, loop: true, bob: [0,-1,0,-1],
+           frames: [F.carryA,F.carryB,F.carryA,F.carryB] },
+  snack: { name: "snacking",    builtin: true, fps: 3, loop: true, bob: [0,0,0,0],
+           frames: [F.snackA,F.snackB,F.snackA,F.idle] },
+  groove:{ name: "grooving",    builtin: true, fps: 7, loop: true, bob: [0,-1,0,-1],
+           frames: [F.grooveA,F.grooveB,F.grooveA,F.grooveB] },
+  nap:   { name: "dozing",      builtin: true, fps: 1.2, loop: true, bob: [0,0],
+           frames: [F.napA,F.napB] }
 };
 
-/* Animations the buddy may pick on his own when he has nothing better to do. */
-const DEFAULT_ROTATION = ["wave","dance","work","think","jump"];
+/* Animations he may pick on his own when he has nothing better to do. */
+const DEFAULT_ROTATION = ["wave", "dance", "work", "think", "jump", "desk", "chill", "read", "stretch", "groove", "sit"];
 
 /* Actions the engine needs and must never lose. */
-const REQUIRED = ["idle","walk","run","sleep","held","fall","land"];
+const REQUIRED = ["idle", "walk", "run", "sleep", "held", "fall", "land"];
 
 /* ---------- props ----------
    Small 8x8 things he can take out and use. Their own palette: they are objects in
@@ -168,39 +282,20 @@ function drawProp(ctx, name, frameIndex, o) {
   if (o.alpha != null) ctx.globalAlpha = o.alpha;
   if (o.flip) { ctx.translate(o.cx * 2, 0); ctx.scale(-1, 1); }
   for (let y = 0; y < h; y++) {
+    const py = Math.round(y0 + y * s), ph = Math.round(y0 + (y + 1) * s) - py;
     for (let x = 0; x < w; x++) {
       const ch = rows[y][x];
       if (!ch || ch === ".") continue;
       const col = PROP_PALETTE[ch];
       if (!col) continue;
+      const px = Math.round(x0 + x * s), pw = Math.round(x0 + (x + 1) * s) - px;
       ctx.fillStyle = col;
-      ctx.fillRect(Math.round(x0 + x * s), Math.round(y0 + y * s), s, s);
+      ctx.fillRect(px, py, pw, ph);
     }
   }
   ctx.restore();
 }
 
-
-/* ---------- things he would like ----------
-   He asks for one of these now and then. The point is not the list — it is that
-   what he asks for is answerable in the editor that ships with him, so "can I have
-   a skateboard" is a thing you can actually go and make, and he can tell when you
-   have. */
-
-const WISH_POOL = [
-  { text: "a skateboard", kind: "animation" },
-  { text: "a tiny hat", kind: "animation" },
-  { text: "an umbrella", kind: "animation" },
-  { text: "a fishing rod", kind: "animation" },
-  { text: "a guitar", kind: "animation" },
-  { text: "a plant to water", kind: "animation" },
-  { text: "a paintbrush", kind: "animation" },
-  { text: "a swimming animation", kind: "animation" },
-  { text: "somewhere to sit down", kind: "animation" },
-  { text: "a sleeping bag", kind: "animation" },
-  { text: "a second ball in another colour", kind: "prop" },
-  { text: "a cartwheel", kind: "animation" }
-];
 
 /* ---------- the ball ----------
    Everything else here is drawn on his 16x16 grid. The ball is not: a football
@@ -341,15 +436,19 @@ function drawFrame(ctx, frame, opts) {
     ctx.translate(-opts.cx, -opts.baseY);
   }
   if (flip === -1) { ctx.translate(opts.cx * 2, 0); ctx.scale(-1, 1); }
+  /* Cell edges are rounded rather than the cell size, so a fractional scale — 3.6
+     rather than 4 — still tiles without seams or overlaps. */
   for (let y = 0; y < GRID; y++) {
     const row = frame[y] || "";
+    const py = Math.round(y0 + y * scale), ph = Math.round(y0 + (y + 1) * scale) - py;
     for (let x = 0; x < GRID; x++) {
       const ch = row[x];
       if (!ch || ch === ".") continue;
       const col = pal[ch];
       if (!col) continue;
+      const px = Math.round(x0 + x * scale), pw = Math.round(x0 + (x + 1) * scale) - px;
       ctx.fillStyle = col;
-      ctx.fillRect(Math.round(x0 + x * scale), Math.round(y0 + y * scale), scale, scale);
+      ctx.fillRect(px, py, pw, ph);
     }
   }
   ctx.restore();
@@ -381,7 +480,7 @@ function drawStanding(ctx, frame, o) {
 const DEFAULT_STATE = {
   version: 1,
   name: "Claude",
-  look: { scale: 4, colors: Object.assign({}, DEFAULT_COLORS), shadow: true, opacity: 1 },
+  look: { scale: 3.6, colors: Object.assign({}, DEFAULT_COLORS), shadow: true, opacity: 1 },
   behavior: {
     energy: 0.5,          /* how often he decides to do something          */
     walkSpeed: 26,        /* screen px per second                          */
@@ -402,7 +501,6 @@ const DEFAULT_STATE = {
     buildGoal: true,       /* puts up a goal and takes shots at it           */
     flyDrone: true,
     walkPet: true,         /* takes his own small pet out                    */
-    proposeIdeas: true,    /* asks for things for you to make                */
     useBed: true,          /* pulls out a bed rather than dropping where he stands */
     checkIn: true,         /* asks how it is going, now and then             */
     checkInMinutes: 45
@@ -431,8 +529,7 @@ const DEFAULT_STATE = {
     seeIdle: true,
     seeTime: true
   },
-  stats: { bestKeepies: 0, goals: 0, gifts: 0, happiness: 0.5 },
-  wishes: [],
+  stats: { bestKeepies: 0, goals: 0, goalsDate: "", gifts: 0, happiness: 0.5 },
   rotation: DEFAULT_ROTATION.slice(),
   animations: {}          /* overrides of built-ins + custom animations    */
 };
@@ -447,7 +544,6 @@ function mergeState(saved) {
   if (Array.isArray(saved.behavior && saved.behavior.phrases)) s.behavior.phrases = saved.behavior.phrases.slice(0, 40);
   if (Array.isArray(saved.rotation)) s.rotation = saved.rotation.slice();
   if (Array.isArray(saved.reactions)) s.reactions = saved.reactions.slice(0, 40);
-  if (Array.isArray(saved.wishes)) s.wishes = saved.wishes.slice(0, 30);
   Object.assign(s.awareness, saved.awareness || {});
   Object.assign(s.stats, saved.stats || {});
   s.animations = {};
@@ -477,7 +573,7 @@ function blankFrame() { return normalizeFrame([]); }
 if (typeof window !== "undefined") {
   window.CB = {
     GRID, F, DEFAULT_ANIMATIONS, DEFAULT_ROTATION, DEFAULT_COLORS, DEFAULT_STATE, REQUIRED,
-    FOOT_ROW, PROPS, PROP_PALETTE, WISH_POOL, drawProp, drawBall, BALL_COLORS, normalizeAnim, normalizeFrame, blankFrame, drawFrame, drawShadow, drawStanding,
+    FOOT_ROW, PROPS, PROP_PALETTE, drawProp, drawBall, BALL_COLORS, normalizeAnim, normalizeFrame, blankFrame, drawFrame, drawShadow, drawStanding,
     paletteFor, resolveColors, mergeState, animationsOf, mix, hexToRgb, rgbToHex
   };
 }

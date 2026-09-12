@@ -60,7 +60,9 @@ fall, land) are the ones the engine drives itself; they can be edited but not re
   a Revert button); **Save as new** files it as your own.
 
 **Look** — body colour, with shade and highlight following it unless you pin them;
-eye colour; size (2×–8×); opacity; shadow; always-on-top.
+eye colour; size (2×–8× in tenths, 3.6× by default); opacity; shadow; always-on-top.
+Fractional sizes tile cleanly because cell *edges* are rounded to whole pixels
+rather than cell widths, so nothing seams or overlaps.
 
 **Behaviour** — energy (how often he decides to do something), walk and run speed,
 gravity, how close to the screen edge he will go, whether he follows the cursor,
@@ -183,24 +185,14 @@ Turn it off in Behaviour and he only ever uses the floor.
 - **A bed.** When he gets tired he does not switch off where he stands: he takes a
   bed out, unrolls it, and lies down on it with his legs tucked under him. Wake him
   and he packs it away.
+- **Goals are a daily tally.** Yesterday's are yesterday's; the count starts again
+  each day.
 - **Checking in.** Every so often — forty-five minutes by default, adjustable — he
   asks how it is going. With a model he asks about whatever you are actually in;
   without one he asks anyway.
 
 Each has a switch in Behaviour, and each can be asked for by name in the talk line
 or from the menu bar.
-
-### He asks for things
-
-Now and then he asks for something — *"could i have a skateboard?"* — and it lands
-in the studio under **He has been asking for**, with a **Make it** button that opens
-the editor with that name already filled in.
-
-The point is that what he asks for is always something the editor that ships with
-him can produce. And he can tell when you have: the moment a new animation appears
-in his list he stops what he is doing, plays it, throws hearts, and thanks you by
-name — *"you made it! a skateboard!"* — then keeps it in his rotation like any other.
-He never asks for more than three things at once.
 
 ### Talking to him
 

@@ -114,11 +114,6 @@
 
   <main>
     <section id="tab-anims">
-      <div class="panel" id="wishPanel" hidden>
-        <h3>He has been asking for</h3>
-        <div id="wishList"></div>
-        <div class="hint">Make one and he will notice the moment you save it.</div>
-      </div>
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
         <button class="primary" id="newAnim">+ New animation</button>
         <span class="hint" style="margin:0">Ticked animations go into the rotation he picks from on his own.</span>
@@ -195,7 +190,7 @@
           </div>
           <div class="panel">
             <h3>Size and presence</h3>
-            <div class="field"><label>Size</label><input type="range" id="lScale" min="2" max="8" step="1"><span class="val" id="lScaleV"></span></div>
+            <div class="field"><label>Size</label><input type="range" id="lScale" min="2" max="8" step="0.2"><span class="val" id="lScaleV"></span></div>
             <div class="field"><label>Opacity</label><input type="range" id="lOpacity" min="0.3" max="1" step="0.05"><span class="val" id="lOpacityV"></span></div>
             <div class="field"><label>Shadow</label><input type="checkbox" id="lShadow"></div>
             <div class="field"><label>Always on top</label><input type="checkbox" id="bTop"></div>
@@ -232,11 +227,10 @@
           <div class="field"><label>Put up a goal</label><input type="checkbox" id="bGoal"></div>
           <div class="field"><label>Fly a drone</label><input type="checkbox" id="bDrone"></div>
           <div class="field"><label>Walk his own pet</label><input type="checkbox" id="bDog"></div>
-          <div class="field"><label>Ask for things to be made</label><input type="checkbox" id="bWish"></div>
           <div class="field"><label>Sleep in a bed</label><input type="checkbox" id="bBed"></div>
           <div class="field"><label>Check in on you</label><input type="checkbox" id="bCheck"></div>
           <div class="field"><label>…how often</label><input type="range" id="bCheckMins" min="5" max="180" step="5"><span class="val" id="bCheckMinsV"></span></div>
-          <div class="hint">Keepie-uppies <b id="bestKeepies">0</b> · goals <b id="goalCount">0</b> ·
+          <div class="hint">Keepie-uppies <b id="bestKeepies">0</b> · goals <b id="goalCount">0</b> today ·
             things you made him <b id="giftCount">0</b></div>
           <div class="field"><label>Sleep after</label><input type="range" id="bSleep" min="0" max="600" step="10"><span class="val" id="bSleepV"></span></div>
           <div class="hint">Sleep after 0 means he never naps.</div>
@@ -687,7 +681,7 @@ function bindRange(id, get, set, fmt) {
   const input = el(id), out = el(id + "V");
   input.oninput = e => { set(Number(e.target.value)); if (out) out.textContent = fmt(Number(e.target.value)); save(); };
 }
-bindRange("lScale", null, v => { state.look.scale = v; players[1].opts.scale = v * 2; }, v => v + "×");
+bindRange("lScale", null, v => { state.look.scale = v; players[1].opts.scale = v * 2; }, v => v.toFixed(1) + "×");
 bindRange("lOpacity", null, v => state.look.opacity = v, v => Math.round(v * 100) + "%");
 bindRange("bEnergy", null, v => state.behavior.energy = v, v => Math.round(v * 100) + "%");
 bindRange("bWalk", null, v => state.behavior.walkSpeed = v, v => v + " px/s");
@@ -708,56 +702,11 @@ el("bWindows").onchange = e => { state.behavior.useWindows = e.target.checked; s
 el("bGoal").onchange = e => { state.behavior.buildGoal = e.target.checked; save(); };
 el("bDrone").onchange = e => { state.behavior.flyDrone = e.target.checked; save(); };
 el("bDog").onchange = e => { state.behavior.walkPet = e.target.checked; save(); };
-el("bWish").onchange = e => { state.behavior.proposeIdeas = e.target.checked; save(); };
 el("bBed").onchange = e => { state.behavior.useBed = e.target.checked; save(); };
 el("bCheck").onchange = e => { state.behavior.checkIn = e.target.checked; save(); };
 bindRange("bCheckMins", null, v => state.behavior.checkInMinutes = v, v => "every " + v + " min");
 
-/* What he has asked for, and the shortest path from asking to having. */
-function renderWishes() {
-  const pending = (state.wishes || []).filter(w => !w.granted);
-  const made = (state.wishes || []).filter(w => w.granted);
-  el("wishPanel").hidden = !(pending.length || made.length);
-  const list = el("wishList");
-  list.innerHTML = "";
-  for (const w of pending) {
-    const row = document.createElement("div");
-    row.className = "field";
-    row.innerHTML = '<label style="width:auto;flex:1">“Could I have ' + w.text + '?”</label>' +
-      '<button class="primary" data-make="' + w.id + '">Make it</button>' +
-      '<button data-drop="' + w.id + '">No</button>';
-    list.appendChild(row);
-  }
-  if (made.length) {
-    const done = document.createElement("div");
-    done.className = "hint";
-    done.textContent = "Made already: " + made.map(w => w.text).join(", ");
-    list.appendChild(done);
-  }
-  list.querySelectorAll("[data-make]").forEach(b => b.onclick = () => {
-    const w = (state.wishes || []).find(x => x.id === b.dataset.make);
-    if (!w) return;
-    draft = CB.normalizeAnim({ name: w.text, fps: 6, loop: true, frames: [CB.blankFrame()] });
-    draftKey = null; frameIndex = 0;
-    document.querySelector('nav button[data-tab="editor"]').click();
-    syncEditor();
-    hint('Draw “' + w.text + '”, then Save — he is watching for it.');
-  });
-  list.querySelectorAll("[data-drop]").forEach(b => b.onclick = () => {
-    state.wishes = (state.wishes || []).filter(x => x.id !== b.dataset.drop);
-    save(true); renderWishes();
-  });
-}
-el("aOn").onchange = e => { state.awareness.enabled = e.target.checked; save(true); if (e.target.checked) refreshModels(); };
-el("aEndpoint").oninput = e => { state.awareness.endpoint = e.target.value.trim(); save(); };
-el("aModel").onchange = e => { state.awareness.model = e.target.value; save(true); };
-el("aApp").onchange = e => { state.awareness.seeApp = e.target.checked; save(); };
-el("aIdle").onchange = e => { state.awareness.seeIdle = e.target.checked; save(); };
-el("aTime").onchange = e => { state.awareness.seeTime = e.target.checked; save(); };
-el("aPersona").oninput = e => { state.awareness.persona = e.target.value; save(); };
-el("aTitle").onchange = e => { state.awareness.seeTitle = e.target.checked; save(true); if (e.target.checked) send("requestAccessibility"); };
-el("bTalk").onchange = e => { state.behavior.talkOnClick = e.target.checked; save(); };
-
+/* The table of what he does about what you are doing. */
 function renderReactions() {
   const wrap = el("reactions");
   wrap.innerHTML = "";
@@ -786,31 +735,6 @@ function renderReactions() {
     state.reactions.splice(Number(b.dataset.delR), 1); save(true); renderReactions();
   });
 }
-bindRange("aGap", null, v => state.awareness.minGap = v, v => v + " s");
-
-function refreshModels() {
-  el("aOut").textContent = "looking for models…";
-  send("listModels", { endpoint: state.awareness.endpoint });
-}
-function fillModels(list, error) {
-  const sel = el("aModel");
-  if (!list || !list.length) {
-    sel.innerHTML = '<option value="">nothing found</option>';
-    el("aOut").textContent = error ? ("no models: " + error) : "Ollama answered with no models. Try `ollama pull gemma3:1b`.";
-    return;
-  }
-  /* embedding models cannot hold a conversation — never offer them */
-  const chatty = list.filter(m => !/embed/i.test(m.name || ""));
-  const sorted = (chatty.length ? chatty : list).slice().sort((a, b) => (a.size || 0) - (b.size || 0));
-  sel.innerHTML = sorted.map(m =>
-    '<option value="' + m.name + '">' + m.name + (m.size ? "  ·  " + (m.size / 1e9).toFixed(1) + " GB" : "") + '</option>').join("");
-  if (!state.awareness.model || !sorted.some(m => m.name === state.awareness.model)) {
-    state.awareness.model = sorted[0].name;   /* smallest is the sensible default */
-    save();
-  }
-  sel.value = state.awareness.model;
-  el("aOut").textContent = sorted.length + " model(s) available.";
-}
 
 el("bPhrases").oninput = e => {
   state.behavior.phrases = e.target.value.split("\n").map(s => s.trim()).filter(Boolean).slice(0, 40);
@@ -824,7 +748,7 @@ function renderControls() {
   el("pinShade").checked = !!state.look.colors.pinShade;
   el("pinLight").checked = !!state.look.colors.pinLight;
   const set = (id, v, fmt) => { el(id).value = v; if (el(id + "V")) el(id + "V").textContent = fmt(v); };
-  set("lScale", state.look.scale, v => v + "×");
+  set("lScale", state.look.scale, v => Number(v).toFixed(1) + "×");
   set("lOpacity", state.look.opacity == null ? 1 : state.look.opacity, v => Math.round(v * 100) + "%");
   set("bEnergy", state.behavior.energy, v => Math.round(v * 100) + "%");
   set("bWalk", state.behavior.walkSpeed, v => v + " px/s");
@@ -842,17 +766,16 @@ function renderControls() {
   el("bProps").checked = state.behavior.useProps !== false;
   el("bNight").checked = state.behavior.nightMode !== false;
   el("bestKeepies").textContent = (state.stats && state.stats.bestKeepies) || 0;
-  el("goalCount").textContent = (state.stats && state.stats.goals) || 0;
+  el("goalCount").textContent = (state.stats && state.stats.goals) || 0;   /* today's */
   el("giftCount").textContent = (state.stats && state.stats.gifts) || 0;
   el("bWindows").checked = state.behavior.useWindows !== false;
   el("bGoal").checked = state.behavior.buildGoal !== false;
   el("bDrone").checked = state.behavior.flyDrone !== false;
   el("bDog").checked = state.behavior.walkPet !== false;
-  el("bWish").checked = state.behavior.proposeIdeas !== false;
   el("bBed").checked = state.behavior.useBed !== false;
   el("bCheck").checked = state.behavior.checkIn !== false;
   set("bCheckMins", state.behavior.checkInMinutes || 45, v => "every " + v + " min");
-  renderWishes();
+  renderReactions();
   const aw = state.awareness || {};
   el("aOn").checked = !!aw.enabled;
   el("aEndpoint").value = aw.endpoint || "http://localhost:11434";

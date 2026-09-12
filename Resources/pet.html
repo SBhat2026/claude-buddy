@@ -129,6 +129,7 @@ function applyState(raw) {
   const c = window.CB.resolveColors(state.look.colors);
   miniPalette = window.CB.paletteFor({ body: window.CB.mix(c.body, "#ffffff", 0.22), dark: c.dark });
   if (!anims[pet.action]) setAction("idle");
+  rollGoalDay();
   clampX();
   /* Something new appeared in his animation list, which can only mean you drew it. */
   const added = Object.keys(anims).filter(k => before.indexOf(k) < 0);
@@ -137,7 +138,7 @@ function applyState(raw) {
 }
 
 /* ---------- geometry ---------- */
-const scale = () => Math.max(1, Math.min(8, Math.round(state.look.scale || 4)));
+const scale = () => Math.max(1, Math.min(8, Number(state.look.scale) || 3.6));
 const spriteW = () => window.CB.GRID * scale();
 const ground = () => screenRect.y + screenRect.h - 2;
 const minX = () => screenRect.x + (state.behavior.edgeMargin || 24);
@@ -269,6 +270,8 @@ const toWinY = sy => BASE_Y + (sy - pet.y);
 /* ---------- actions ---------- */
 function setAction(name, holdSeconds) {
   if (!anims[name]) name = "idle";
+  /* chilling is a thing you do with someone */
+  if (name === "chill" && !mini && state.behavior.walkPet !== false && onFloor()) walkTheDog();
   if (pet.action !== name) { pet.frame = 0; pet.frameT = 0; }
   pet.action = name;
   pet.actionT = 0;
@@ -412,7 +415,6 @@ function decide() {
   /* now and then he asks you for something, or starts a project of his own */
   if (onFloor() && !busy()) {
     const r0 = Math.random();
-    if (r0 < 0.05 && maybeWish()) return;
     if (r0 < 0.11 && b.buildGoal !== false) { putUpGoal(); return; }
     if (r0 < 0.16 && b.flyDrone !== false) { flyDrone(); return; }
     if (r0 < 0.21 && b.walkPet !== false) { walkTheDog(); return; }
@@ -474,7 +476,6 @@ function command(cmd, msg) {
     const p = pickPlatform();
     if (p) hopTo(p); else say("nothing to jump onto", 2.5);
   }
-  else if (cmd === "wish") { if (!maybeWish()) say("i'm alright for now", 3); }
   else if (cmd === "checkin") { checkin.last = 0; maybeCheckIn(); }
   else if (cmd === "center") { pet.x = screenRect.x + screenRect.w / 2; pet.y = ground(); setAction("land", 0.4); }
   else if (cmd === "jump") { pet.vy = -520; pet.y -= 1; setAction("fall", 4); }
@@ -669,7 +670,6 @@ const COMMANDS = [
   { re: /\b(drone|fly|quadcopter)\b/,                   run: () => { flyDrone(); return "launching"; } },
   { re: /\b(dog|pet|puppy|walk him|walk it)\b/,          run: () => { walkTheDog(); return "come on then"; } },
   { re: /\b(climb|jump up|hop|get up there|up there)\b/, run: () => { const p = pickPlatform(); if (!p) return "nothing to jump onto"; hopTo(p); return "up we go"; } },
-  { re: /\b(want|wish|like|need)\b/,                    run: () => { if (!maybeWish()) return "i'm alright"; return ""; } },
   { re: /\b(score|keepie|keepy|record|goals)\b/,         run: () => "best " + ((state.stats && state.stats.bestKeepies) || 0) + " · " + ((state.stats && state.stats.goals) || 0) + " goals" }
 ];
 
@@ -761,6 +761,15 @@ talkInput.addEventListener("keydown", e => {
    A goal he puts up himself, a drone he flies, and his own small pet on a leash.
    All three are floor-only: he does not take the dog up a wall. */
 
+/* Yesterday's goals are yesterday's. The tally starts again each day. */
+function today() { return new Date().toISOString().slice(0, 10); }
+function rollGoalDay() {
+  if (state.stats.goalsDate !== today()) {
+    state.stats.goals = 0;
+    state.stats.goalsDate = today();
+  }
+}
+
 const goalScale = () => Math.max(2, scale() - 1);
 const goalW = () => 16 * goalScale();
 const goalH = () => 7 * goalScale();
@@ -788,6 +797,7 @@ function updateGoal(dt) {
     const inMouth = Math.abs(ball.x - goal.x) < goalW() / 2 - 4 && ball.y > ground() - goalH();
     if (inMouth && !ball.scored) {
       ball.scored = true;
+      rollGoalDay();
       state.stats.goals = (state.stats.goals || 0) + 1;
       say(["goal!", "get in", "" + state.stats.goals + " today"][(Math.random() * 3) | 0], 3);
       heart(goal.x, ground() - goalH() - 10);
@@ -920,42 +930,9 @@ function getUp() {
 
 const busy = () => Boolean(goal || drone || mini || bed || isPlaying());
 
-/* ---------- things he would like you to make ----------
-   He asks rarely, never more than a few outstanding, and what he asks for is
-   always something the studio's editor can actually produce. */
-
-const wishes = { lastAsk: 0 };
-
-function pendingWishes() { return (state.wishes || []).filter(w => !w.granted); }
-
-function maybeWish() {
-  if (state.behavior.proposeIdeas === false) return false;
-  const now = Date.now() / 1000;
-  if (now - wishes.lastAsk < 1500) return false;
-  if (pendingWishes().length >= 3) return false;
-  const asked = new Set((state.wishes || []).map(w => w.text));
-  const pool = window.CB.WISH_POOL.filter(p => !asked.has(p.text));
-  if (!pool.length) return false;
-  const pick = pool[(Math.random() * pool.length) | 0];
-  state.wishes = (state.wishes || []).concat({
-    id: "w" + Date.now(), text: pick.text, kind: pick.kind, asked: Date.now(), granted: false
-  });
-  wishes.lastAsk = now;
-  persist();
-  setAction("think", 4);
-  say("could i have " + pick.text + "?", 6);
-  return true;
-}
-
-/* You made the thing. This is the whole point of asking. */
+/* You drew him something new. He notices. */
 function celebrate(key) {
   const name = (anims[key] && anims[key].name) || key;
-  const words = String(name).toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 2);
-  let matched = null;
-  for (const w of (state.wishes || [])) {
-    if (w.granted) continue;
-    if (words.some(word => w.text.toLowerCase().includes(word))) { w.granted = true; matched = w; break; }
-  }
   state.stats.gifts = (state.stats.gifts || 0) + 1;
   state.stats.happiness = Math.min(1, (state.stats.happiness || 0.5) + 0.2);
   persist();
@@ -964,7 +941,7 @@ function celebrate(key) {
   for (let i = 0; i < 3; i++) {
     setTimeout(() => heart(pet.x + (Math.random() * 40 - 20), pet.y - window.CB.GRID * scale() - 6), i * 260);
   }
-  say(matched ? "you made it! " + matched.text + "!" : "a new one! thank you", 6);
+  say("a new one — " + name + "!", 6);
 }
 
 /* If Ollama is running and nothing has been chosen, he chooses: the smallest model
