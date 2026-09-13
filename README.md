@@ -222,6 +222,42 @@ and none of the rest are worth enumerating to find the search bar.
 
 Turn it off in Behaviour and he only ever uses the floor.
 
+### His day
+
+Left to dice rolls he does the same six things forever and most of the library never
+appears. So the day is divided into phases, each with its own pool of things worth
+doing at that hour:
+
+| | | |
+| --- | --- | --- |
+| 00:30–06:00 | the small hours | asleep, unless you are up — then he creeps about |
+| 06:00–07:30 | waking up | stretching, yawning, a wave |
+| 07:30–09:00 | **breakfast** | he cooks, eats, has something to drink |
+| 09:00–12:00 | the morning | at the desk, working, thinking, reading, grooving |
+| 12:00–13:30 | **lunch** | the same meal, then sitting about |
+| 13:30–17:30 | the afternoon | work, carrying, peeking, waiting, football, the goal, the drone |
+| 17:30–19:30 | **dinner** | the meal again, and he walks his pet after |
+| 19:30–22:30 | the evening | chilling with his own small one, dancing, laughing, reading |
+| 22:30–00:30 | winding down | yawning, sitting, dozing, creeping about |
+
+A meal is a routine, not a pose: he cooks in the chef's hat, then snacks, then has a
+drink, then looks pleased with himself — once each per day, remembered across
+restarts so a relaunch does not mean second lunch.
+
+**Energy.** Running, jumping and football tire him; sitting, reading and sleeping
+give it back. The rates are calibrated against a day rather than a minute — about
+five minutes of solid running, or a quarter of an hour of football, takes him from
+full to worn out, while walking about is nearly free. Below a fifth of the bar he
+stops whatever he is doing and lies down: a doze on the spot in the afternoon, the
+bed if it is late. That is what "a significant amount of activity" means here —
+not a step count, but actually being tired.
+
+The **His day** tab shows the schedule, which phase he is in, what he is doing and
+how much energy he has left, and has the switch that turns the whole thing off.
+
+Everything else still overrides it: what you are doing on screen, being picked up,
+being spoken to, and being clicked all come first.
+
 ### Things he gets up to
 
 - **A goal.** He puts one up himself — posts, then the crossbar, then the net —

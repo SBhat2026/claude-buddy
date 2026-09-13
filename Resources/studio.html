@@ -110,6 +110,7 @@
     <button data-tab="look">Look</button>
     <button data-tab="behavior">Behaviour</button>
     <button data-tab="aware">Awareness</button>
+    <button data-tab="day">His day</button>
   </nav>
 
   <main>
@@ -287,6 +288,38 @@
         </div>
       </div>
     </section>
+    <section id="tab-day" hidden>
+      <div class="two">
+        <div>
+          <div class="panel">
+            <h3>Right now</h3>
+            <div class="field"><label>Follow the clock</label><input type="checkbox" id="bClock"></div>
+            <div class="hint">With this off he picks at random from his rotation all day, as he used to.</div>
+            <div class="field" style="margin-top:12px"><label>The hour says</label><b id="dayPhase">—</b></div>
+            <div class="field"><label>He is</label><b id="dayDoing">—</b></div>
+            <div class="field"><label>Energy</label>
+              <div style="flex:1;height:10px;background:var(--paper);border:1px solid var(--line);border-radius:5px;overflow:hidden">
+                <div id="dayStamina" style="height:100%;width:100%;background:var(--accent)"></div>
+              </div>
+              <span class="val" id="dayStaminaV">—</span></div>
+            <div class="hint">Running, jumping and football tire him; sitting, reading and sleeping give it back.
+              Below a fifth he stops and lies down — a doze in the afternoon, the bed if it is late.</div>
+          </div>
+          <div class="panel">
+            <h3>Meals today</h3>
+            <div id="dayMeals" class="hint">—</div>
+            <div class="hint">He cooks, eats and has something to drink, once each per day.</div>
+          </div>
+        </div>
+        <div class="panel">
+          <h3>The day</h3>
+          <div id="daySchedule"></div>
+          <div class="hint">Each hour has its own pool of things worth doing. Anything you untick in
+            Animations is left out of it, and every animation he has appears in at least one of these —
+            the build fails if one has nowhere to be chosen.</div>
+        </div>
+      </div>
+    </section>
   </main>
 
   <footer>
@@ -315,6 +348,7 @@ window.__onNative = function (msg) {
   else if (msg.type === "petVisible") { petVisible = !!msg.value; el("togglePet").textContent = petVisible ? "Hide buddy" : "Show buddy"; }
   else if (msg.type === "saved") flash("saved");
   else if (msg.type === "models") fillModels(msg.list, msg.error);
+  else if (msg.type === "vitals") showVitals(msg);
   else if (msg.type === "accessibility") {
     el("axStatus").textContent = msg.trusted
       ? "Accessibility is granted — he can read window titles."
@@ -338,7 +372,7 @@ function palette() { return CB.paletteFor(state.look.colors); }
 /* ---------------- tabs ---------------- */
 document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
   document.querySelectorAll("nav button").forEach(x => x.classList.toggle("on", x === b));
-  ["anims", "editor", "look", "behavior", "aware"].forEach(t => el("tab-" + t).hidden = (t !== b.dataset.tab));
+  ["anims", "editor", "look", "behavior", "aware", "day"].forEach(t => el("tab-" + t).hidden = (t !== b.dataset.tab));
 });
 document.querySelectorAll(".quick button[data-cmd]").forEach(b => b.onclick = () => send("command", { cmd: b.dataset.cmd }));
 el("togglePet").onclick = () => { petVisible = !petVisible; send(petVisible ? "showPet" : "hidePet"); el("togglePet").textContent = petVisible ? "Hide buddy" : "Show buddy"; };
@@ -703,10 +737,51 @@ el("bGoal").onchange = e => { state.behavior.buildGoal = e.target.checked; save(
 el("bDrone").onchange = e => { state.behavior.flyDrone = e.target.checked; save(); };
 el("bDog").onchange = e => { state.behavior.walkPet = e.target.checked; save(); };
 el("bBed").onchange = e => { state.behavior.useBed = e.target.checked; save(); };
+el("bClock").onchange = e => { state.behavior.followClock = e.target.checked; save(); };
 el("bCheck").onchange = e => { state.behavior.checkIn = e.target.checked; save(); };
 bindRange("bCheckMins", null, v => state.behavior.checkInMinutes = v, v => "every " + v + " min");
 
 /* The table of what he does about what you are doing. */
+function fmtHour(h) {
+  const hh = ((Math.floor(h) % 24) + 24) % 24;
+  const mm = Math.round((h - Math.floor(h)) * 60);
+  return String(hh).padStart(2, "0") + ":" + String(mm).padStart(2, "0");
+}
+
+function renderSchedule() {
+  const now = new Date().getHours() + new Date().getMinutes() / 60;
+  const here = CB.phaseAt(now);
+  const wrap = el("daySchedule");
+  wrap.innerHTML = CB.DAY_PHASES.map(p => {
+    const mine = p.key === here.key;
+    const names = Object.keys(p.pool).map(k => (anims[k] && anims[k].name) || k).join(" · ");
+    return '<div style="padding:7px 9px;margin-bottom:6px;border-radius:9px;border:1px solid ' +
+      (mine ? 'var(--accent)' : 'var(--line)') + ';background:' + (mine ? '#fdf4ef' : 'var(--paper)') + '">' +
+      '<div style="display:flex;gap:8px;align-items:baseline">' +
+        '<b style="font-variant-numeric:tabular-nums">' + fmtHour(p.from) + '–' + fmtHour(p.to) + '</b>' +
+        '<span>' + p.title + '</span>' +
+        (p.meal ? '<span class="tag">meal</span>' : '') +
+        (p.sleeps ? '<span class="tag">asleep</span>' : '') +
+      '</div>' +
+      '<div class="hint" style="margin:2px 0 0">' + names + '</div></div>';
+  }).join("");
+  el("dayPhase").textContent = here.title;
+}
+
+function showVitals(v) {
+  el("dayPhase").textContent = v.phaseTitle || "—";
+  el("dayDoing").textContent = (v.asleep ? "asleep — " : "") + (v.animName || v.action || "—");
+  const pct = Math.round((v.stamina == null ? 1 : v.stamina) * 100);
+  el("dayStamina").style.width = pct + "%";
+  el("dayStamina").style.background = pct < 20 ? "#b4453a" : "var(--accent)";
+  el("dayStaminaV").textContent = pct + "%";
+  const meals = v.meals || {};
+  const today = new Date().toISOString().slice(0, 10);
+  const done = CB.DAY_PHASES.filter(p => p.meal).map(p =>
+    (meals[p.key] === today ? "✓ " : "· ") + p.title);
+  el("dayMeals").textContent = done.join("   ");
+}
+
 function renderReactions() {
   const wrap = el("reactions");
   wrap.innerHTML = "";
@@ -787,7 +862,9 @@ function renderControls() {
   if (aw.model) el("aModel").innerHTML = '<option value="' + aw.model + '">' + aw.model + '</option>';
   el("aTitle").checked = !!aw.seeTitle;
   el("bTalk").checked = state.behavior.talkOnClick !== false;
+  el("bClock").checked = state.behavior.followClock !== false;
   renderReactions();
+  renderSchedule();
   send("accessibilityStatus");
   players[1].opts.scale = (state.look.scale || 3) * 2;
 }

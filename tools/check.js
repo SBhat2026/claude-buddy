@@ -78,9 +78,27 @@ for (const [key, anim] of Object.entries(A)) {
   if (spread > 3) fail(key, `moves his head ${spread} rows, which is more than folding legs can explain`);
 }
 
+/* Every animation must have somewhere in the day it can actually be chosen.
+   Drawing one and leaving it in the gallery is the same as not drawing it. */
+const inPools = new Set();
+for (const phase of CB.DAY_PHASES) for (const k of Object.keys(phase.pool || {})) inPools.add(k);
+for (const step of CB.MEAL_ROUTINE) inPools.add(step.anim);
+const byEngine = new Set(Object.keys(CB.ENGINE_ANIMATIONS));
+const inReactions = new Set(CB.DEFAULT_STATE.reactions.map(r => r.do));
+
+const homeless = Object.keys(A).filter(k => !inPools.has(k) && !byEngine.has(k) && !inReactions.has(k));
+if (homeless.length) fail("never used anywhere in the day:", homeless.join(", "));
+
+/* …and nothing may point at an animation that does not exist. */
+const known = new Set(Object.keys(A).concat(["ball", "goal", "drone", "dog"]));
+for (const phase of CB.DAY_PHASES) {
+  for (const k of Object.keys(phase.pool || {})) if (!known.has(k)) fail(phase.key, "schedules", k, "which is not an animation");
+}
+for (const k of Object.keys(CB.ENGINE_ANIMATIONS)) if (!A[k]) fail("the engine list names", k, "which is not an animation");
+
 const count = Object.keys(A).length;
 if (fails) {
   console.log(`\n${fails} problem(s) across ${count} animations.`);
   process.exit(1);
 }
-console.log(`  ✓ ${count} animations, one body, every frame with a face.`);
+console.log(`  ✓ ${count} animations, one body, every frame with a face, and every one of them used somewhere in the day.`);

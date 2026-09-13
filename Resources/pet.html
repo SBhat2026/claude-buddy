@@ -252,7 +252,10 @@ function landOn(p) {
   pet.vx = 0; pet.vy = 0;
   setAction("land", 0.3);
   puff(pet.x, p.y, 1);
-  if (p.label && Math.random() < 0.35) say(quipFor(p), 3.2);
+  if (p.label && Math.random() < 0.35) {
+    say(quipFor(p), 3.2);
+    if (anims.point) setTimeout(() => { if (pet.surface === "platform") setAction("point", 3); }, 400);
+  }
 }
 
 function quipFor(p) {
@@ -276,7 +279,7 @@ function setAction(name, holdSeconds) {
   pet.action = name;
   pet.actionT = 0;
   pet.hold = holdSeconds == null ? 2.5 : holdSeconds;
-  pet.asleep = (name === "sleep" || name === "abed");
+  pet.asleep = (name === "sleep" || name === "abed" || name === "nap");
 }
 
 function say(text, seconds) {
@@ -381,6 +384,105 @@ function startPlaying(seconds) {
 }
 const isPlaying = () => ball && !ball.out && Date.now() / 1000 < play.until;
 
+
+/* ---------- his day ----------
+   What he does depends on the hour and on how much he has been doing. Left to dice
+   rolls he repeats the same six things forever; with a clock he cooks at mealtimes,
+   works in the morning, sits about in the evening and goes to bed at night. */
+
+const day = { stamina: 1, routine: null, phaseKey: null, seenApps: {} };
+
+function hourNow() { const d = new Date(); return d.getHours() + d.getMinutes() / 60; }
+function phaseNow() { return window.CB.phaseAt(hourNow()); }
+function todayKey() { return new Date().toISOString().slice(0, 10); }
+const followClock = () => state.behavior.followClock !== false;
+
+/* What each thing costs him, and what gives it back, per second.
+   Calibrated against a day rather than a minute: six minutes of solid running takes
+   him from full to worn out, a quarter of an hour of football does the same, and
+   walking about is nearly free. Idling recovers it over ten minutes or so, a nap in
+   about ninety seconds, and a night in bed in a couple of minutes. */
+const EFFORT = { run: 0.0028, jump: 0.0100, flip: 0.0100, kick: 0.0060, cheer: 0.0020,
+                 carry: 0.0018, dance: 0.0018, clap: 0.0015, groove: 0.0014,
+                 fall: 0.0008, walk: 0.0006, tiptoe: 0.0005 };
+const REST   = { abed: 0.0100, sleep: 0.0100, nap: 0.0080, chill: 0.0030, sit: 0.0026,
+                 drink: 0.0025, read: 0.0020, idle: 0.0017, think: 0.0015, desk: 0.0012 };
+
+function tickStamina(dt) {
+  const effort = (EFFORT[pet.action] || 0) + (isPlaying() ? 0.0010 : 0);
+  const rest = REST[pet.action] || 0;
+  day.stamina = Math.max(0, Math.min(1, day.stamina + (rest - effort) * dt));
+}
+
+/* "A significant amount of activity" is not a number of steps — it is being worn
+   out. Below a fifth of his energy he stops whatever he is doing and lies down:
+   properly in the bed if it is late, a doze on the spot if it is the afternoon. */
+function wornOut() { return day.stamina < 0.2; }
+
+function takeNap() {
+  if (bed || !onFloor()) return;
+  putAwayBall();
+  setAction("nap", 70 + Math.random() * 40);
+  if (Math.random() < 0.6) say("just five minutes", 3);
+}
+
+/* ── meals ── */
+function mealDone(key) { return (state.stats.meals || {})[key] === todayKey(); }
+function markMeal(key) {
+  state.stats.meals = Object.assign({}, state.stats.meals || {});
+  state.stats.meals[key] = todayKey();
+  persist();
+}
+
+function startMeal(phase) {
+  markMeal(phase.key);
+  putAwayBall();
+  day.routine = { steps: window.CB.MEAL_ROUTINE.slice(), i: -1, t: 0, until: 0, what: phase.title };
+}
+
+/* Driven by the frame clock like everything else, rather than by the wall clock:
+   the difference does not show on a desktop, but it is what lets the whole meal be
+   run through in a test in a tenth of a second. */
+function runRoutine(dt) {
+  const r = day.routine;
+  if (!r) return false;
+  r.t += dt;
+  while (r.t >= r.until) {
+    r.i++;
+    if (r.i >= r.steps.length) { day.routine = null; return false; }
+    const step = r.steps[r.i];
+    r.until = r.t + step.seconds;
+    if (!anims[step.anim]) continue;
+    setAction(step.anim, step.seconds + 2);
+    if (step.say) say(step.say, 3.5);
+  }
+  return true;
+}
+
+/* Anything he is allowed to choose: an animation you have not switched off, or one
+   of the projects, if that project is switched on. */
+function allowedNow(key) {
+  const b = state.behavior;
+  if (key === "ball") return b.playBall !== false && !busy();
+  if (key === "goal") return b.buildGoal !== false && !busy();
+  if (key === "drone") return b.flyDrone !== false && !busy();
+  if (key === "dog") return b.walkPet !== false && !busy();
+  if (!anims[key]) return false;
+  const rot = state.rotation || [];
+  return !rot.length || rot.indexOf(key) >= 0;
+}
+
+function doScheduled(key) {
+  if (key === "ball") { startPlaying(14 + Math.random() * 14); return true; }
+  if (key === "goal") { putUpGoal(); return true; }
+  if (key === "drone") { flyDrone(); return true; }
+  if (key === "dog") { walkTheDog(); return true; }
+  if (key === "nap") { takeNap(); return true; }
+  if (!anims[key]) return false;
+  setAction(key, 3 + Math.random() * 4);
+  return true;
+}
+
 /* ---------- deciding what to do ---------- */
 function nightHour() {
   const h = new Date().getHours();
@@ -398,6 +500,20 @@ function decide() {
   const nap = sleepDelay();
 
   if (nap > 0 && now - pet.lastInteraction > nap) { goToBed(); return; }
+
+  const phase = phaseNow();
+  if (followClock()) {
+    /* worn out, or the small hours with nobody about */
+    if (wornOut() && onFloor()) {
+      if (phase.sleeps || phase.key === "winddown") goToBed(); else takeNap();
+      return;
+    }
+    if (phase.sleeps && now - pet.lastInteraction > 90) { goToBed(); return; }
+
+    /* mealtimes, once each per day */
+    if (phase.meal && !mealDone(phase.key) && onFloor() && !busy()) { startMeal(phase); return; }
+  }
+
   if (maybeCheckIn()) return;
 
   if (isPlaying()) { walkTo(ball.x - pet.facing * 6, Math.abs(ball.x - pet.x) > 120); return; }
@@ -425,7 +541,13 @@ function decide() {
     }
   }
 
-  /* over half the time he simply gets on with whatever you are getting on with */
+  /* what the hour suggests — the largest single source of what he does */
+  if (followClock() && Math.random() < 0.62) {
+    const pick = window.CB.pickFromPool(phase.pool, allowedNow);
+    if (pick && doScheduled(pick)) return;
+  }
+
+  /* over half the rest of the time he gets on with whatever you are getting on with */
   const act = aware.activity;
   if (act && Math.random() < 0.55) {
     if (act.do === "ball") { if (b.playBall) { startPlaying(14 + Math.random() * 14); return; } }
@@ -523,6 +645,16 @@ function onContext(ctx0) {
   if (pet.dragging || talk.open) return;
   if (pet.asleep) { if (cameBack) { pet.lastInteraction = now; setAction("idle", 1.5); } return; }
 
+  /* an app he has not seen before gets looked at before anything else */
+  if (appChanged && ctx0.app && !day.seenApps[ctx0.app]) {
+    day.seenApps[ctx0.app] = true;
+    if (!busy() && !pet.asleep && anims.peek && Math.random() < 0.5) {
+      setAction("peek", 3.5);
+      pet.lastInteraction = now;
+      return;
+    }
+  }
+
   /* he changes what he is doing as soon as you change what you are doing */
   if ((appChanged || titleChanged) && hit && !isPlaying()) {
     pet.lastInteraction = now;
@@ -537,7 +669,10 @@ function onContext(ctx0) {
     reason = aware.seenOnce ? ("they just switched to " + ctx0.app) : ("they are working in " + ctx0.app);
     if (a.seeTitle && ctx0.title) reason += ', the window is called "' + ctx0.title + '"';
   }
-  if (a.seeIdle && cameBack) reason = "they have just come back to the keyboard";
+  if (a.seeIdle && cameBack) {
+    reason = "they have just come back to the keyboard";
+    if (!busy() && !pet.asleep && anims.wave) setAction("wave", 2.5);
+  }
   aware.seenOnce = true;
   if (!reason) return;
   if (now - aware.lastAsk < Math.max(20, a.minGap || 150)) return;
@@ -715,7 +850,7 @@ function submitTalk() {
   if (!a.model) {
     /* No model chosen yet — answer now, and go and find one for next time. */
     say(fallbackReply(text), 4.5);
-    setAction(pickMove(), 3);
+    setAction(anims.shrug ? "shrug" : pickMove(), 3.5);
     send("listModels", { endpoint: a.endpoint || "http://localhost:11434" });
     return;
   }
@@ -741,7 +876,7 @@ function onTalkReply(msg) {
   /* Whatever went wrong — a busy GPU, a model that answered in punctuation — he
      still says something. Being spoken to and ignored is the one outcome worth
      engineering away. */
-  if (!msg.ok) { say(fallbackReply(talk.lastAsked), 4); setAction(pickMove(), 3); return; }
+  if (!msg.ok) { say(fallbackReply(talk.lastAsked), 4); setAction(anims.shrug ? "shrug" : pickMove(), 3.5); return; }
   const obj = parseReply(msg.text);
   const line = clean(obj && obj.say, 120) || fallbackReply(talk.lastAsked);
   if (talk.history.length) talk.history[talk.history.length - 1].a = line;
@@ -802,6 +937,8 @@ function updateGoal(dt) {
       say(["goal!", "get in", "" + state.stats.goals + " today"][(Math.random() * 3) | 0], 3);
       heart(goal.x, ground() - goalH() - 10);
       puff(ball.x, ground(), 2);
+      setAction(anims.clap ? "clap" : "cheer", 2.5);
+      setTimeout(() => { if (!pet.dragging && !pet.asleep) setAction("cheer", 2.5); }, 2600);
       persist();
       ball.vx = 0; ball.vy = -40;
       setTimeout(() => { if (ball) { ball.x = pet.x + (pet.facing || 1) * 24; ball.scored = false; } }, 900);
@@ -1016,12 +1153,22 @@ function update(dt) {
   updateEffects(dt);
   updateGoal(dt);
   updateBed(dt);
+  tickStamina(dt);
   updateDrone(dt);
   updateMini(dt);
 
   if (talk.open) {
     if (Date.now() / 1000 > talk.closeAt) closeTalk();
     else if (!pet.dragging) { advance(dt); return; }   /* he stands still and listens */
+  }
+
+  if (pet.dragging && day.routine) day.routine = null;   /* picked up mid-meal */
+  if (day.routine && !pet.dragging && onFloor()) { runRoutine(dt); advance(dt); return; }
+
+  /* a nap ends by itself, and he gets up stiff */
+  if (pet.action === "nap" && pet.actionT > pet.hold) {
+    day.stamina = Math.max(day.stamina, 0.8);
+    setAction("stretch", 3.5);
   }
 
   if (pet.dragging) {
@@ -1259,6 +1406,16 @@ function place() {
     }
   }
 }
+
+setInterval(() => {
+  const phase = phaseNow();
+  send("vitals", {
+    stamina: Math.round(day.stamina * 100) / 100,
+    phase: phase.key, phaseTitle: phase.title,
+    action: pet.action, animName: (anims[pet.action] || {}).name || pet.action,
+    asleep: pet.asleep, meals: state.stats.meals || {}
+  });
+}, 4000);
 
 send("ready");
 setTimeout(() => {

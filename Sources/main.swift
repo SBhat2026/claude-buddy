@@ -352,6 +352,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         case "hidePet": petHidden = true; petPanel.orderOut(nil)
         case "showPet": petHidden = false; petPanel.orderFrontRegardless()
         case "command": command(body)
+        case "vitals":
+            /* straight through to the studio, if it is open to see it */
+            if studioView != nil {
+                var msg = body
+                msg["type"] = "vitals"
+                post(to: studioView, msg)
+            }
         case "beginTalk": beginTalk()
         case "endTalk": endTalk()
         case "requestAccessibility":

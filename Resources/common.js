@@ -295,6 +295,114 @@ const DEFAULT_ROTATION = ["wave", "dance", "work", "think", "jump", "desk", "chi
 /* Actions the engine needs and must never lose. */
 const REQUIRED = ["idle", "walk", "run", "sleep", "held", "fall", "land"];
 
+/* ---------- his day ----------
+   Left to dice rolls he does the same six things forever and the rest of the
+   library never appears. So the day is divided into phases, each with its own pool
+   of things worth doing at that hour — and a check at build time fails if any
+   animation has nowhere in the day it could be chosen.
+
+   The hours are a guess at an ordinary one, and every one of them is adjustable in
+   the Studio. Meals are the fixed points: he cooks, eats, and has something to
+   drink, once each per day.                                                      */
+
+const DAY_PHASES = [
+  { key: "night",     from: 0.5,  to: 6,    title: "the small hours",
+    sleeps: true, pool: { tiptoe: 3, peek: 1 } },
+
+  { key: "waking",    from: 6,    to: 7.5,  title: "waking up",
+    pool: { stretch: 4, yawn: 4, idle: 2, wave: 2, tiptoe: 1 } },
+
+  { key: "breakfast", from: 7.5,  to: 9,    title: "breakfast",
+    meal: true, pool: { drink: 3, snack: 2, happy: 2, groove: 1 } },
+
+  { key: "morning",   from: 9,    to: 12,   title: "the morning",
+    pool: { desk: 5, work: 4, think: 3, read: 2, groove: 2, drink: 2, point: 1, wave: 1 } },
+
+  { key: "lunch",     from: 12,   to: 13.5, title: "lunch",
+    meal: true, pool: { sit: 3, snack: 2, laugh: 2, chill: 2, ball: 1 } },
+
+  { key: "afternoon", from: 13.5, to: 17.5, title: "the afternoon",
+    pool: { work: 4, desk: 3, read: 2, carry: 2, peek: 2, tap: 2, ball: 2,
+            goal: 1, drone: 1, point: 1, clap: 1, shrug: 1 } },
+
+  { key: "dinner",    from: 17.5, to: 19.5, title: "dinner",
+    meal: true, pool: { snack: 2, drink: 2, happy: 2, dog: 2 } },
+
+  { key: "evening",   from: 19.5, to: 22.5, title: "the evening",
+    pool: { chill: 4, dance: 3, groove: 3, laugh: 3, read: 2, sit: 2, dog: 2,
+            cheer: 1, happy: 1, ball: 1 } },
+
+  { key: "winddown",  from: 22.5, to: 24.5, title: "winding down",
+    pool: { yawn: 4, sit: 3, stretch: 2, nap: 2, tiptoe: 2, read: 2, shrug: 1 } }
+];
+
+/* The steps of a meal, in order. He cooks first — the hat is in the frames. */
+const MEAL_ROUTINE = [
+  { anim: "chef",  seconds: 14, say: "right, what's for that then" },
+  { anim: "snack", seconds: 9 },
+  { anim: "drink", seconds: 9 },
+  { anim: "happy", seconds: 4, say: "that'll do" }
+];
+
+/* Animations the engine plays itself, with the reason — this list is what the
+   coverage check accepts as "used" for anything not in a phase pool. */
+const ENGINE_ANIMATIONS = {
+  idle:  "standing about",
+  walk:  "going somewhere",
+  run:   "going somewhere faster",
+  jump:  "the crouch before he leaps at a toolbar",
+  fall:  "in the air",
+  land:  "arriving",
+  held:  "picked up",
+  kick:  "the ball",
+  flip:  "double-clicked",
+  sleep: "asleep where he stands, when the bed is switched off",
+  abed:  "asleep in the bed",
+  nap:   "worn out, or dozing in the afternoon",
+  wave:  "you came back to the keyboard",
+  cheer: "a goal, or a new animation you drew",
+  clap:  "a goal",
+  happy: "thanked",
+  shrug: "asked something he has no answer for",
+  peek:  "you switched to an app he has not seen",
+  point: "he got onto something and wants you to see",
+  think: "asked a question he is waiting on the model for",
+  tap:   "waiting for you to come back",
+  sit:   "resting",
+  chill: "sitting with his own small one",
+  desk:  "you are in an editor",
+  work:  "you are in an editor",
+  drink: "a break",
+  stretch: "after a long sit",
+  read:  "you are reading something",
+  dance: "you are playing music",
+  groove: "you are playing music",
+  snack: "part of a meal",
+  chef:  "the start of a meal",
+  carry: "tidying up",
+  yawn:  "late",
+  laugh: "something amused him",
+  tiptoe: "creeping about while you are away"
+};
+
+/* Which phase an hour falls in. Phases that run past midnight wrap. */
+function phaseAt(hour) {
+  for (const p of DAY_PHASES) {
+    if (p.to > 24 ? (hour >= p.from || hour < p.to - 24) : (hour >= p.from && hour < p.to)) return p;
+  }
+  return DAY_PHASES[0];
+}
+
+/* A weighted pick from a phase's pool, skipping anything switched off. */
+function pickFromPool(pool, allowed) {
+  const entries = Object.entries(pool || {}).filter(([k]) => !allowed || allowed(k));
+  const total = entries.reduce((sum, [, w]) => sum + w, 0);
+  if (!total) return null;
+  let r = Math.random() * total;
+  for (const [k, w] of entries) { r -= w; if (r <= 0) return k; }
+  return entries[entries.length - 1][0];
+}
+
 /* ---------- props ----------
    Small 8x8 things he can take out and use. Their own palette: they are objects in
    the world, not part of him, so they do not recolour when he does.               */
@@ -578,6 +686,7 @@ const DEFAULT_STATE = {
     flyDrone: true,
     walkPet: true,         /* takes his own small pet out                    */
     useBed: true,          /* pulls out a bed rather than dropping where he stands */
+    followClock: true,     /* cooks at mealtimes, works mornings, sleeps at night  */
     checkIn: true,         /* asks how it is going, now and then             */
     checkInMinutes: 45
   },
@@ -605,7 +714,7 @@ const DEFAULT_STATE = {
     seeIdle: true,
     seeTime: true
   },
-  stats: { bestKeepies: 0, goals: 0, goalsDate: "", gifts: 0, happiness: 0.5 },
+  stats: { bestKeepies: 0, goals: 0, goalsDate: "", gifts: 0, happiness: 0.5, meals: {} },
   rotation: DEFAULT_ROTATION.slice(),
   animations: {}          /* overrides of built-ins + custom animations    */
 };
@@ -665,7 +774,8 @@ function topRowOf(frame) {
 if (typeof window !== "undefined") {
   window.CB = {
     GRID, F, DEFAULT_ANIMATIONS, DEFAULT_ROTATION, DEFAULT_COLORS, DEFAULT_STATE, REQUIRED,
-    FOOT_ROW, SPRITE_VERSION, PROPS, PROP_PALETTE, drawProp, topRowOf, drawBall, BALL_COLORS, normalizeAnim, normalizeFrame, blankFrame, drawFrame, drawShadow, drawStanding,
+    FOOT_ROW, SPRITE_VERSION, PROPS, PROP_PALETTE, drawProp, topRowOf,
+    DAY_PHASES, MEAL_ROUTINE, ENGINE_ANIMATIONS, phaseAt, pickFromPool, drawBall, BALL_COLORS, normalizeAnim, normalizeFrame, blankFrame, drawFrame, drawShadow, drawStanding,
     paletteFor, resolveColors, mergeState, animationsOf, mix, hexToRgb, rgbToHex
   };
 }
