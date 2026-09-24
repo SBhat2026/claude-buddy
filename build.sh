@@ -3,8 +3,10 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 ROOT="$PWD"
-APP="$ROOT/build/ClaudeBuddy.app"
-NAME="ClaudeBuddy"
+NAME="ClaudeBuddy"                                  # the executable
+APP_NAME="${APP_NAME:-Claude Buddy}"                # what it is called on disk
+BUNDLE_ID="${BUNDLE_ID:-com.siddhantbhat.claudebuddy}"
+APP="$ROOT/build/$NAME.app"
 
 echo "› cleaning"
 rm -rf "$APP" "$ROOT/build/$NAME" "$ROOT/build/icon.iconset" "$ROOT/build/$NAME.icns"
@@ -41,10 +43,10 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleName</key><string>Claude Buddy</string>
-  <key>CFBundleDisplayName</key><string>Claude Buddy</string>
+  <key>CFBundleName</key><string>$APP_NAME</string>
+  <key>CFBundleDisplayName</key><string>$APP_NAME</string>
   <key>CFBundleExecutable</key><string>$NAME</string>
-  <key>CFBundleIdentifier</key><string>com.siddhantbhat.claudebuddy</string>
+  <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>1.0</string>
@@ -61,9 +63,11 @@ echo "› signing (ad-hoc)"
 codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || echo "  (unsigned — still runs locally)"
 
 echo "› zipping"
-rm -f "$ROOT/build/ClaudeBuddy.zip"
-ditto -c -k --keepParent "$APP" "$ROOT/build/ClaudeBuddy.zip"
+FINAL="$ROOT/build/$APP_NAME.app"
+if [ "$FINAL" != "$APP" ]; then rm -rf "$FINAL"; mv "$APP" "$FINAL"; APP="$FINAL"; fi
+rm -f "$ROOT/build/$APP_NAME.zip"
+ditto -c -k --keepParent "$APP" "$ROOT/build/$APP_NAME.zip"
 
 echo
 echo "built: $APP"
-echo "zip:   $ROOT/build/ClaudeBuddy.zip"
+echo "zip:   $ROOT/build/$APP_NAME.zip"

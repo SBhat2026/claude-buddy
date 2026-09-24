@@ -111,6 +111,7 @@
     <button data-tab="behavior">Behaviour</button>
     <button data-tab="aware">Awareness</button>
     <button data-tab="day">His day</button>
+    <button data-tab="bdays">Birthdays</button>
   </nav>
 
   <main>
@@ -320,6 +321,31 @@
         </div>
       </div>
     </section>
+    <section id="tab-bdays" hidden>
+      <div class="two">
+        <div class="panel">
+          <h3>Birthdays he knows</h3>
+          <div id="bdayList"></div>
+          <div class="field" style="margin-top:10px">
+            <input type="text" id="bdayName" placeholder="name" style="flex:2">
+            <input type="text" id="bdayDate" placeholder="MM-DD" style="flex:1" maxlength="5" spellcheck="false">
+            <button class="primary" data-act="addBday">Add</button>
+          </div>
+          <div class="hint">Month and day only — the year is nobody's business.</div>
+        </div>
+        <div class="panel">
+          <h3>What happens on the day</h3>
+          <div class="hint" id="bdayToday" style="font-size:13px;color:var(--ink)"></div>
+          <div class="hint" style="margin-top:8px">
+            He puts a paper hat on the moment he notices and keeps it on all day, whatever else he
+            is doing. He comes out of a present to say it, brings a cake out, blows the candle,
+            throws confetti, applauds, and is generally no use for anything else. The hour's usual
+            schedule is set aside until midnight.
+          </div>
+          <div class="tools"><button data-act="testBday">Show me</button></div>
+        </div>
+      </div>
+    </section>
   </main>
 
   <footer>
@@ -372,7 +398,7 @@ function palette() { return CB.paletteFor(state.look.colors); }
 /* ---------------- tabs ---------------- */
 document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
   document.querySelectorAll("nav button").forEach(x => x.classList.toggle("on", x === b));
-  ["anims", "editor", "look", "behavior", "aware", "day"].forEach(t => el("tab-" + t).hidden = (t !== b.dataset.tab));
+  ["anims", "editor", "look", "behavior", "aware", "day", "bdays"].forEach(t => el("tab-" + t).hidden = (t !== b.dataset.tab));
 });
 document.querySelectorAll(".quick button[data-cmd]").forEach(b => b.onclick = () => send("command", { cmd: b.dataset.cmd }));
 el("togglePet").onclick = () => { petVisible = !petVisible; send(petVisible ? "showPet" : "hidePet"); el("togglePet").textContent = petVisible ? "Hide buddy" : "Show buddy"; };
@@ -652,6 +678,15 @@ document.querySelectorAll("[data-act]").forEach(b => b.onclick = () => {
   else if (a === "save") saveDraft(false);
   else if (a === "saveas") saveDraft(true);
   else if (a === "preview") { const k = saveDraft(false); if (k) send("command", { cmd: "play", anim: k, seconds: 6 }); }
+  else if (a === "addBday") {
+    const name = el("bdayName").value.trim();
+    const date = el("bdayDate").value.trim();
+    if (!name || !/^\d{2}-\d{2}$/.test(date)) { flash("name and MM-DD, please"); return; }
+    state.birthdays = (state.birthdays || []).concat({ name: name, date: date });
+    el("bdayName").value = ""; el("bdayDate").value = "";
+    save(true); renderBirthdays();
+  }
+  else if (a === "testBday") send("command", { cmd: "birthday" });
   else if (a === "grantAX") send("requestAccessibility");
   else if (a === "addReaction") { state.reactions.push({ match: "", do: "wave", say: "" }); save(); renderReactions(); }
   else if (a === "resetReactions") { state.reactions = CB.mergeState(null).reactions; save(true); renderReactions(); }
@@ -782,6 +817,31 @@ function showVitals(v) {
   el("dayMeals").textContent = done.join("   ");
 }
 
+function renderBirthdays() {
+  const list = el("bdayList");
+  const rows = state.birthdays || [];
+  list.innerHTML = rows.length ? "" : '<div class="hint">None yet.</div>';
+  rows.forEach((b, i) => {
+    const days = CB.daysUntil(b.date);
+    const today = days === 0;
+    const row = document.createElement("div");
+    row.className = "field";
+    row.innerHTML = '<label style="width:auto;flex:1">' + (b.name || "—") + '</label>' +
+      '<span class="val" style="width:70px">' + (b.date || "") + '</span>' +
+      '<span class="hint" style="margin:0;width:110px">' +
+        (today ? "<b>today</b>" : days == null ? "" : "in " + days + (days === 1 ? " day" : " days")) + '</span>' +
+      '<button data-del-b="' + i + '" class="danger">×</button>';
+    list.appendChild(row);
+  });
+  list.querySelectorAll("[data-del-b]").forEach(b => b.onclick = () => {
+    state.birthdays.splice(Number(b.dataset.delB), 1); save(true); renderBirthdays();
+  });
+  const who = CB.birthdayToday(state.birthdays);
+  el("bdayToday").textContent = who
+    ? "It is " + who.name + "'s birthday today."
+    : "No birthday today.";
+}
+
 function renderReactions() {
   const wrap = el("reactions");
   wrap.innerHTML = "";
@@ -864,6 +924,7 @@ function renderControls() {
   el("bTalk").checked = state.behavior.talkOnClick !== false;
   el("bClock").checked = state.behavior.followClock !== false;
   renderReactions();
+  renderBirthdays();
   renderSchedule();
   send("accessibilityStatus");
   players[1].opts.scale = (state.look.scale || 3) * 2;

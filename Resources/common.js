@@ -2,13 +2,13 @@
 
 /* ---------- pixel vocabulary ----------
    '.' transparent   '1' body   '2' shade   '3' light   '0' dark (eyes)   'w' white
+   'c' coffee        's' screen 'y' flame   'r' ribbon
    Every frame is 16 rows of 16 characters.                                        */
 
 /* ---------- the character ----------
    Drawn from the onboarding block — a body wider than it is tall, two square eyes
    set wide in the upper half, an arm nub out each side at mid height, and four legs
-   in two pairs with a gap between them — with a little of the walking sprite's
-   character in the eyes, which are the only part of his face that ever moves.
+   in two pairs with a gap between them.
 
        .###########.
        .###########.
@@ -20,17 +20,13 @@
        .###########.
        ..#.#...#.#..     four legs, two pairs
 
-   The body is copied into every frame and never changes: not squashed, not
-   stretched, not leaned, not tipped over. A character whose head changes shape
-   while it walks is a character that wobbles, which is exactly what was wrong.
+   The body is copied into every frame and never changes. Three things move — the
+   eyes, the legs and the arms — and nothing else.
 
-   Three things move, and only these three:
-
-     the EYES   — open, shut, wide, pleased, or looking to one side
-     the LEGS   — the three rows beneath the body
-     the ARMS   — the nubs at the sides, and cells beyond them
-
-   All 27 animations are combinations of those.                                  */
+   Legs and arms are described as LIMBS rather than drawn as rows, because rows let
+   a leg exist on the bottom row with nothing above it, which renders as a pixel
+   floating under him. A limb here is a column and a length, so it is always joined
+   to the body by construction, and a step shortens a leg instead of deleting it. */
 
 /* Paint spans into a 16-wide row: R(["1", 3, 13]) fills columns 3 to 13. */
 function R(...spans) {
@@ -40,174 +36,289 @@ function R(...spans) {
   }
   return row.join("");
 }
+function paint(row, ...spans) {
+  const out = [...row];
+  for (const [ch, from, to] of spans) {
+    for (let x = Math.max(0, from); x <= Math.min(to, 15); x++) out[x] = ch;
+  }
+  return out.join("");
+}
 
 const BLANK = R();
 
-/* ── the body: 11 wide, with the arm nubs reaching 13 ── */
-const BODY = R(["1", 3, 13]);
-const ARMS = R(["1", 2, 14]);
-
-/* ── the eyes, which carry the whole face ── */
+/* ── the body, and where things attach to it ── */
+const BODY_L = 3, BODY_R = 13;          /* his own width                     */
+const ARM_L = 2, ARM_R = 14;            /* the nubs stick out one either side */
 const EYE_L = 5, EYE_R = 11;
-const EYES   = R(["1", 3, 13], ["0", EYE_L, EYE_L], ["0", EYE_R, EYE_R]);
-const EYES_T = R(["1", 3, 13], ["0", EYE_L, EYE_L], ["0", EYE_R, EYE_R]);  /* tall: with BROW_T below */
-const BROW_T = R(["1", 3, 13], ["0", EYE_L, EYE_L], ["0", EYE_R, EYE_R]);
-const EYES_C = R(["1", 3, 13], ["2", EYE_L - 1, EYE_L + 1], ["2", EYE_R - 1, EYE_R + 1]);
-const EYES_H = R(["1", 3, 13], ["0", EYE_L, EYE_L], ["0", EYE_R, EYE_R]);  /* pleased, with CARET */
-const CARET  = R(["1", 3, 13], ["0", EYE_L - 1, EYE_L - 1], ["0", EYE_L + 1, EYE_L + 1],
-                               ["0", EYE_R - 1, EYE_R - 1], ["0", EYE_R + 1, EYE_R + 1]);
-const EYES_LK = R(["1", 3, 13], ["0", EYE_L - 1, EYE_L - 1], ["0", EYE_R - 1, EYE_R - 1]);
-const EYES_RK = R(["1", 3, 13], ["0", EYE_L + 1, EYE_L + 1], ["0", EYE_R + 1, EYE_R + 1]);
+const HEAD  = R(["1", BODY_L, BODY_R]);
+const NUBS  = R(["1", ARM_L, ARM_R]);
 
-/* ── the arms: the nub rows, reaching further or lifting ── */
-const ARMS_OUT  = R(["1", 1, 15]);
-const ARMS_R    = R(["1", 2, 15]);
-const ARMS_L    = R(["1", 1, 14]);
-const EYE_SPAN  = [["0", EYE_L, EYE_L], ["0", EYE_R, EYE_R]];
-const ARM_UP_R  = R(["1", 3, 13], ...EYE_SPAN, ["1", 14, 14]);   /* hand up beside the head */
-const ARM_UP_LR = R(["1", 3, 13], ...EYE_SPAN, ["1", 2, 2], ["1", 14, 14]);
-const HIGH_R    = R(["1", 14, 14]);                        /* …and above it           */
-const HIGH_LR   = R(["1", 2, 2], ["1", 14, 14]);
-const ARM_MUG   = R(["1", 3, 13], ["2", EYE_L - 1, EYE_L + 1], ["2", EYE_R - 1, EYE_R + 1], ["1", 14, 14], ["c", 15, 15]);
-const ARM_PAGE  = R(["1", 2, 14], ["w", 15, 15]);
-const ARM_PAGE2 = R(["1", 2, 14], ["0", 15, 15]);
-const ARM_SNACK = R(["1", 2, 14], ["3", 15, 15]);
+/* ── eyes ── */
+const eyesRow = (ch, spread) => R(["1", BODY_L, BODY_R],
+  [ch, EYE_L - spread, EYE_L + spread], [ch, EYE_R - spread, EYE_R + spread]);
+const eyesAt = (dx, ch) => R(["1", BODY_L, BODY_R],
+  [ch || "0", EYE_L + dx, EYE_L + dx], [ch || "0", EYE_R + dx, EYE_R + dx]);
 
-/* ── the legs ── */
-const LEGS      = R(["1", 4, 4], ["1", 6, 6], ["1", 10, 10], ["1", 12, 12]);
-const LEGS_FR   = R(["1", 4, 4], ["1", 6, 6]);
-const LEGS_BK   = R(["1", 10, 10], ["1", 12, 12]);
-const LEGS_WIDE = R(["1", 3, 3], ["1", 6, 6], ["1", 10, 10], ["1", 13, 13]);
-const LEGS_IN   = R(["1", 5, 5], ["1", 7, 7], ["1", 9, 9], ["1", 11, 11]);
-const LEGS_KICK = R(["1", 4, 4], ["1", 6, 6], ["1", 10, 10], ["1", 14, 14]);
-const LEGS_KICK2= R(["1", 4, 4], ["1", 6, 6], ["1", 10, 10], ["1", 15, 15]);
-const FEET      = R(["1", 4, 5], ["1", 11, 13]);
+const EYES    = eyesAt(0);                       /* open                      */
+const EYES_C  = eyesRow("2", 1);                 /* shut: a line either side  */
+const EYES_LK = eyesAt(-1);                      /* looking left              */
+const EYES_RK = eyesAt(1);                       /* looking right             */
+const EYES_TALL = eyesAt(0);                     /* with the same below it    */
+const CARET   = R(["1", BODY_L, BODY_R], ["0", EYE_L - 1, EYE_L - 1], ["0", EYE_L + 1, EYE_L + 1],
+                                        ["0", EYE_R - 1, EYE_R - 1], ["0", EYE_R + 1, EYE_R + 1]);
+const SMILE   = R(["1", BODY_L, BODY_R], ["0", 6, 6], ["0", 10, 10], ["0", 7, 9]);  /* a happy mouth */
+const CUPS    = (row) => paint(row, ["0", ARM_L, ARM_L], ["0", ARM_R, ARM_R]);
 
-/* ── more arms and legs ── */
-const ARMS_IN   = R(["1", 3, 13]);                         /* nubs pulled in      */
-const ARM_POINT = R(["1", 2, 15]);                         /* one arm, all the way */
-const LEGS_TIP  = R(["1", 5, 5], ["1", 7, 7], ["1", 9, 9], ["1", 11, 11]);
-const LEGS_TIP_A= R(["1", 5, 5], ["1", 9, 9]);
-const LEGS_TIP_B= R(["1", 7, 7], ["1", 11, 11]);
-const LEGS_TAP  = R(["1", 4, 4], ["1", 6, 6], ["1", 10, 10]);
+/* ── limbs ──
+   A limb is a column, a length and an optional foot that reaches sideways at the
+   bottom. Rows are generated downward from the body, so every cell of a limb has
+   the cell above it filled and nothing can come loose. */
+function limb(x, len, foot) { return { x: x, len: len, foot: foot || 0 }; }
 
-/* ── things around him, always clear of the body ── */
-const HAT_TOP  = R(["w", 5, 11]);
-const HAT_MID  = R(["w", 4, 12]);
-const HAT_BAND = R(["0", 4, 12]);
-const BAND     = R(["0", 5, 11]);
-const EYES_CUP = R(["1", 3, 13], ["0", EYE_L, EYE_L], ["0", EYE_R, EYE_R], ["0", 2, 2], ["0", 14, 14]);
-const EYES_CUPC= R(["1", 3, 13], ["2", EYE_L - 1, EYE_L + 1], ["2", EYE_R - 1, EYE_R + 1], ["0", 2, 2], ["0", 14, 14]);
-const BOX_TOP  = R(["0", 4, 12]);
-const BOX_MID  = R(["0", 4, 4], ["3", 5, 11], ["0", 12, 12]);
-const DESK     = R(["0", 0, 15]);
-const DESK_LEG = R(["2", 2, 3], ["2", 12, 13]);
-const Z_HI     = R(["0", 14, 14]);
-const Z_LO     = R(["0", 15, 15]);
-const NOTE     = R(["3", 14, 14]);
-const NOTE2    = R(["3", 1, 1]);
+function legRows(limbs, depth) {
+  const rows = [];
+  for (let r = 0; r < depth; r++) {
+    const spans = [];
+    for (const l of limbs) {
+      if (l.len <= r) continue;
+      const last = r === l.len - 1;
+      const from = Math.min(l.x, last && l.foot ? l.x + l.foot : l.x);
+      const to = Math.max(l.x, last && l.foot ? l.x + l.foot : l.x);
+      spans.push(["1", from, to]);
+    }
+    rows.push(R(...spans));
+  }
+  return rows;
+}
 
-/* Frames are bottom-aligned: the last row given to S() lands on the floor. */
-function S(...rows) {
-  const out = new Array(16).fill(BLANK);
+/* Standing legs: two pairs, a gap between them. */
+const STAND_X = [4, 6, 10, 12];
+const WIDE_X  = [3, 6, 10, 13];
+const TIGHT_X = [5, 7, 9, 11];
+const legs      = (len) => STAND_X.map(x => limb(x, len == null ? 3 : len));
+const legsWide  = (len) => WIDE_X.map(x => limb(x, len == null ? 3 : len));
+const legsTight = (len) => TIGHT_X.map(x => limb(x, len == null ? 2 : len));
+/* a step lifts one pair — it shortens, it never disappears */
+const stepFront = () => [limb(4, 2), limb(6, 2), limb(10, 3), limb(12, 3)];
+const stepBack  = () => [limb(4, 3), limb(6, 3), limb(10, 2), limb(12, 2)];
+const stepWideA = () => [limb(3, 3), limb(6, 3), limb(10, 2), limb(13, 2)];
+const stepWideB = () => [limb(3, 2), limb(6, 2), limb(10, 3), limb(13, 3)];
+/* a kick: the front foot swings out, still joined to the leg above it */
+const kickOut   = (reach) => [limb(4, 3), limb(6, 3), limb(10, 3), limb(12, 3, reach)];
+/* sitting: the legs fold to one row and the feet come forward */
+const seated    = () => [limb(4, 1, 1), limb(6, 1), limb(10, 1), limb(12, 1, 2)];
+const tapping   = () => [limb(4, 3), limb(6, 3), limb(10, 3), limb(12, 2)];
+
+/* ── arms ──
+   The nub row is the shoulder. An arm reaching goes further along that row; an arm
+   raised is a column climbing from the shoulder, so the hand is never adrift. */
+function armsRow(left, right) {
+  return R(["1", left === "out" ? ARM_L - 1 : left === "in" ? BODY_L : ARM_L,
+            right === "out" ? ARM_R + 1 : right === "in" ? BODY_R : ARM_R]);
+}
+function raiseRows(height, sides) {
+  /* returns [rowsAboveShoulder] top-down, each a single cell per raised side */
+  const out = [];
+  for (let i = height; i >= 1; i--) {
+    const spans = [];
+    if (sides.indexOf("L") >= 0) spans.push(["1", ARM_L, ARM_L]);
+    if (sides.indexOf("R") >= 0) spans.push(["1", ARM_R, ARM_R]);
+    out.push(R(...spans));
+  }
+  return out;
+}
+
+/* ── the pose builder ──
+   Every frame is: whatever is above him, then his eight body rows, then his legs.
+   Raised arms are painted onto the body rows they pass, so they stay joined. */
+function pose(opts) {
+  const o = opts || {};
+  const eyes = o.eyes || EYES;
+  const brow = o.brow || HEAD;
+  const arms = armsRow(o.left || "nub", o.right || "nub");
+  let body = [HEAD, HEAD, eyes, brow, HEAD, arms, arms, HEAD];
+
+  /* an arm raised above the shoulder climbs through the body rows beside it */
+  const raise = o.raise || 0;
+  if (raise > 0) {
+    const sides = o.raiseSides || "R";
+    /* the nub goes with it — an arm that is up is not also out to the side, and
+       without this the raised arm is a single cell against a thirteen-wide body
+       and reads as nothing at all */
+    const nubL = sides.indexOf("L") >= 0 ? BODY_L : ARM_L;
+    const nubR = sides.indexOf("R") >= 0 ? BODY_R : ARM_R;
+    body[5] = R(["1", nubL, nubR]);
+    body[6] = R(["1", nubL, nubR]);
+    for (let i = 1; i <= Math.min(raise, 5); i++) {
+      const row = 5 - i;                     /* 5 is the first nub row        */
+      if (row < 0) break;
+      const spans = [];
+      if (sides.indexOf("L") >= 0) spans.push(["1", ARM_L, ARM_L]);
+      if (sides.indexOf("R") >= 0) spans.push(["1", ARM_R, ARM_R]);
+      body[row] = paint(body[row], ...spans);
+    }
+  }
+  if (o.cups) body[2] = CUPS(body[2]);
+  if (o.hold) body[5] = paint(body[5], ...o.hold);       /* in the hand          */
+  if (o.holdUp) body[4] = paint(body[4], ...o.holdUp);   /* …and its top half    */
+
+  const legRowsOut = legRows(o.legs || legs(), o.depth == null ? (o.legs ? Math.max(...o.legs.map(l => l.len)) : 3) : o.depth);
+  const rows = body.concat(legRowsOut);
+
+  /* bottom-aligned on the floor */
+  const frame = new Array(16).fill(BLANK);
   const first = 14 - rows.length;
-  for (let i = 0; i < rows.length; i++) out[first + i] = rows[i];
-  return out;
-}
-/* A() floats something clear above him — a Z, a note, a box, a headband. */
-function A(frame, row, content) {
-  const out = frame.slice();
-  out[row] = content;
-  return out;
+  for (let i = 0; i < rows.length; i++) frame[first + i] = rows[i];
+
+  /* things above him: given top-down, sitting directly on his head */
+  const above = o.above || [];
+  for (let i = 0; i < above.length; i++) {
+    const row = first - above.length + i;
+    if (row >= 0) frame[row] = above[i];
+  }
+  /* Anything floating free — a Z, a musical note — is clamped to the rows above
+     him. Written straight in, a note at row 3 landed on the top of his head and
+     rubbed it out, which is a thing that shipped. */
+  const ceiling = first - (above.length ? above.length : 0) - 1;
+  for (const [row, content] of (o.float || [])) {
+    const y = Math.min(row, ceiling);
+    if (y >= 0) frame[y] = content;
+  }
+  return frame;
 }
 
-/* The body, eight rows of it, with whichever eyes and arms this frame wants.
-   Everything standing is BODY(...) followed by exactly three rows of leg, so the
-   head lands on the same row in every frame and cannot bob, squash or drift. */
-const BODY8 = (eyes, brow, arms) => [
-  BODY, BODY, eyes || EYES, brow || BODY, BODY, arms || ARMS, ARMS, BODY
-];
-const stand = (legs, eyes, brow, arms) =>
-  S(...BODY8(eyes, brow, arms), legs[0] || LEGS, legs[1] || LEGS, legs[2] || LEGS);
+/* ── things he wears or carries, always clear of the body ── */
+const HEADPHONES = [R(["0", 6, 10])];                       /* band over the crown */
+const PARTY_HAT  = [R(["w", 8, 8]), R(["r", 7, 9]), R(["r", 6, 10])];
+const CHEF_HAT   = [R(["w", 5, 11]), R(["w", 4, 12]), R(["0", 4, 12])];
+const BOX        = [R(["0", 4, 12]), R(["0", 4, 4], ["3", 5, 11], ["0", 12, 12])];
+const DESK_TOP   = R(["0", 0, 15]);
+const DESK_FEET  = R(["2", 2, 3], ["2", 12, 13]);
+/* a screen standing on the desk beside him, clear of his body */
+const SCREEN_A   = R(["0", 14, 15]);
+const SCREEN_B   = R(["0", 14, 14], ["s", 15, 15]);
+const Z_HI       = R(["0", 14, 14]);
+const Z_LO       = R(["0", 15, 15]);
+const NOTE       = R(["3", 14, 14]);
+const NOTE2      = R(["3", 1, 1]);
+const MUG        = [["1", ARM_R, ARM_R], ["w", 15, 15]];
+const MUG_TOP    = [["c", 15, 15]];
+const PAGE       = [["1", ARM_R, ARM_R], ["w", 15, 15]];
+const PAGE_TOP   = [["w", 15, 15]];
+const PAGE2      = [["1", ARM_R, ARM_R], ["0", 15, 15]];
+const PAGE2_TOP  = [["w", 15, 15]];
+const SNACK      = [["1", ARM_R, ARM_R], ["3", 15, 15]];
 
 const F = {
-  idle:      stand([LEGS, LEGS, LEGS]),
-  blink:     stand([LEGS, LEGS, LEGS], EYES_C),
-  pleased:   stand([LEGS, LEGS, LEGS], EYES_H, CARET),
-  wide:      stand([LEGS, LEGS, LEGS], EYES_T, BROW_T),
-  lookL:     stand([LEGS, LEGS, LEGS], EYES_LK),
-  lookR:     stand([LEGS, LEGS, LEGS], EYES_RK),
-  shut:      stand([LEGS, LEGS, LEGS], EYES_C),
+  idle:     pose({}),
+  blink:    pose({ eyes: EYES_C }),
+  pleased:  pose({ eyes: EYES, brow: CARET }),
+  smiling:  pose({ eyes: EYES, brow: SMILE }),
+  tall:     pose({ eyes: EYES_TALL, brow: EYES_TALL }),
+  lookL:    pose({ eyes: EYES_LK }),
+  lookR:    pose({ eyes: EYES_RK }),
+  shut:     pose({ eyes: EYES_C }),
 
-  /* walking — three rows of leg in every frame, so the body cannot move a pixel */
-  stepA:     stand([LEGS, LEGS, LEGS_FR]),
-  stepB:     stand([LEGS, LEGS, LEGS_BK]),
-  stepC:     stand([LEGS, LEGS, LEGS_WIDE]),
-  stepD:     stand([LEGS_WIDE, LEGS_WIDE, LEGS_BK]),
-  splay:     stand([LEGS_WIDE, LEGS_WIDE, LEGS_WIDE], EYES_T, BROW_T),
-  dangleA:   stand([LEGS_WIDE, LEGS_WIDE, LEGS_FR], EYES_T, BROW_T),
-  dangleB:   stand([LEGS_WIDE, LEGS_WIDE, LEGS_BK], EYES_T, BROW_T),
-  kickA:     stand([LEGS, LEGS, LEGS_KICK]),
-  kickB:     stand([LEGS, LEGS, LEGS_KICK2]),
+  /* walking */
+  stepA:    pose({ legs: stepFront() }),
+  stepB:    pose({ legs: stepBack() }),
+  stepC:    pose({ legs: stepWideA() }),
+  stepD:    pose({ legs: stepWideB() }),
+  splay:    pose({ eyes: EYES_TALL, brow: EYES_TALL, legs: legsWide() }),
+  dangleA:  pose({ eyes: EYES_TALL, brow: EYES_TALL, legs: [limb(3,3),limb(6,2),limb(10,3),limb(13,2)] }),
+  dangleB:  pose({ eyes: EYES_TALL, brow: EYES_TALL, legs: [limb(3,2),limb(6,3),limb(10,2),limb(13,3)] }),
+  kickA:    pose({ legs: kickOut(1) }),
+  kickB:    pose({ legs: kickOut(3) }),
 
-  /* crouching and sitting: the legs fold, which is the only thing that lowers him */
-  crouch:    S(...BODY8(EYES_T, BROW_T), LEGS, LEGS),
-  tucked:    S(...BODY8(EYES_T, BROW_T), LEGS_IN),
-  tall:      S(...BODY8(EYES_T, BROW_T), LEGS, LEGS, LEGS, LEGS),
-  sitA:      S(...BODY8(), FEET),
-  sitB:      S(...BODY8(EYES_C), FEET),
-  sleepA:    S(...BODY8(EYES_C), LEGS_IN),
-  sleepB:    A(S(...BODY8(EYES_C), LEGS_IN), 4, Z_HI),
-  sleepC:    A(S(...BODY8(EYES_C), LEGS_IN), 3, Z_LO),
-  napA:      A(S(...BODY8(EYES_C), FEET), 4, Z_HI),
-  napB:      A(S(...BODY8(EYES_C), FEET), 3, Z_LO),
+  /* crouching, sitting, sleeping — the legs fold and nothing else changes */
+  crouch:   pose({ eyes: EYES_TALL, brow: EYES_TALL, legs: legs(2) }),
+  tucked:   pose({ eyes: EYES_TALL, brow: EYES_TALL, legs: legsTight(1) }),
+  stretched:pose({ eyes: EYES_TALL, brow: EYES_TALL, legs: legs(4) }),
+  sitA:     pose({ legs: seated() }),
+  sitB:     pose({ eyes: EYES_C, legs: seated() }),
+  sleepA:   pose({ eyes: EYES_C, legs: legsTight(1) }),
+  sleepB:   pose({ eyes: EYES_C, legs: legsTight(1), float: [[4, Z_HI]] }),
+  sleepC:   pose({ eyes: EYES_C, legs: legsTight(1), float: [[3, Z_LO]] }),
+  napA:     pose({ eyes: EYES_C, legs: seated(), float: [[4, Z_HI]] }),
+  napB:     pose({ eyes: EYES_C, legs: seated(), float: [[3, Z_LO]] }),
 
   /* arms */
-  waveA:     stand([LEGS, LEGS, LEGS], ARM_UP_R),
-  waveB:     A(stand([LEGS, LEGS, LEGS], ARM_UP_R), 2, HIGH_R),
-  reachR:    stand([LEGS, LEGS, LEGS], null, null, ARMS_R),
-  reachL:    stand([LEGS, LEGS, LEGS], null, null, ARMS_L),
-  armsOut:   stand([LEGS, LEGS, LEGS], EYES_C, null, ARMS_OUT),
-  cheerA:    A(stand([LEGS, LEGS, LEGS], ARM_UP_LR), 2, HIGH_LR),
-  cheerB:    A(stand([LEGS, LEGS, LEGS_IN], ARM_UP_LR), 2, HIGH_LR),
-  sip:       stand([LEGS, LEGS, LEGS], ARM_MUG),
-  pageA:     stand([LEGS, LEGS, LEGS], EYES_C, null, ARM_PAGE),
-  pageB:     stand([LEGS, LEGS, LEGS], EYES_C, null, ARM_PAGE2),
-  snackA:    stand([LEGS, LEGS, LEGS], null, null, ARM_SNACK),
-  snackB:    stand([LEGS, LEGS, LEGS], EYES_C, null, ARM_SNACK),
+  waveA:    pose({ raise: 1 }),
+  waveB:    pose({ raise: 3 }),
+  reachR:   pose({ right: "out" }),
+  reachL:   pose({ left: "out" }),
+  armsOut:  pose({ eyes: EYES_C, left: "out", right: "out" }),
+  cheerA:   pose({ raise: 3, raiseSides: "LR" }),
+  cheerB:   pose({ raise: 2, raiseSides: "LR", legs: legsTight(3) }),
+  sip:      pose({ eyes: EYES_C, hold: MUG, holdUp: MUG_TOP }),
+  pageA:    pose({ eyes: EYES_C, hold: PAGE, holdUp: PAGE_TOP }),
+  pageB:    pose({ eyes: EYES_C, hold: PAGE2, holdUp: PAGE2_TOP }),
+  snackA:   pose({ hold: SNACK }),
+  snackB:   pose({ eyes: EYES_C, hold: SNACK }),
 
   /* thinking */
-  thinkA:    A(stand([LEGS, LEGS, LEGS]), 2, NOTE),
-  thinkB:    A(stand([LEGS, LEGS, LEGS], EYES_C), 1, NOTE),
+  thinkA:   pose({ float: [[3, NOTE]] }),
+  thinkB:   pose({ eyes: EYES_C, float: [[2, NOTE]] }),
 
-  /* headphones: a band above the head, a cup beside each eye, never on the head */
-  deskA:     A(S(...BODY8(EYES_CUP), DESK, DESK_LEG), 2, BAND),
-  deskB:     A(S(...BODY8(EYES_CUPC, null, ARMS_R), DESK, DESK_LEG), 2, BAND),
-  grooveA:   A(A(stand([LEGS, LEGS, LEGS_FR], EYES_CUP), 2, BAND), 1, NOTE),
-  grooveB:   A(A(stand([LEGS, LEGS, LEGS_BK], EYES_CUPC), 2, BAND), 1, NOTE2),
+  /* at the desk: headphones on, arms in at the keyboard, a screen beside him */
+  deskA:    pose({ cups: true, left: "in", right: "in", above: HEADPHONES,
+                   legs: [], depth: 0, float: [] }),
+  deskB:    pose({ cups: true, eyes: EYES_C, left: "in", right: "in", above: HEADPHONES,
+                   legs: [], depth: 0 }),
 
-  /* ── eight more, all of them eyes, legs and arms ── */
-  chefA:     A(A(A(stand([LEGS, LEGS, LEGS]), 0, HAT_TOP), 1, HAT_MID), 2, HAT_BAND),
-  chefB:     A(A(A(stand([LEGS, LEGS, LEGS], null, null, ARMS_R), 0, HAT_TOP), 1, HAT_MID), 2, HAT_BAND),
-  laughA:    stand([LEGS, LEGS, LEGS], EYES_H, CARET, ARMS_OUT),
-  laughB:    stand([LEGS, LEGS, LEGS_IN], EYES_H, CARET, ARMS_IN),
-  yawnA:     stand([LEGS, LEGS, LEGS], EYES_C, null, ARMS_OUT),
-  yawnB:     A(stand([LEGS, LEGS, LEGS], ARM_UP_LR, null, ARMS_OUT), 2, HIGH_LR),
-  pointA:    stand([LEGS, LEGS, LEGS], EYES_RK, null, ARM_POINT),
-  pointB:    stand([LEGS, LEGS, LEGS_BK], EYES_RK, null, ARM_POINT),
-  shrugA:    stand([LEGS, LEGS, LEGS], EYES_T, BROW_T, ARMS_OUT),
-  shrugB:    stand([LEGS, LEGS, LEGS], EYES_T, BROW_T, ARMS_IN),
-  clapA:     stand([LEGS, LEGS, LEGS], EYES_H, CARET, ARMS_OUT),
-  clapB:     stand([LEGS, LEGS, LEGS], EYES_H, CARET, ARMS_IN),
-  tipA:      stand([LEGS_TIP, LEGS_TIP, LEGS_TIP_A], EYES_LK),
-  tipB:      stand([LEGS_TIP, LEGS_TIP, LEGS_TIP_B], EYES_RK),
-  tapA:      stand([LEGS, LEGS, LEGS_TAP], EYES_C),
-  tapB:      stand([LEGS, LEGS, LEGS]),
+  /* music */
+  grooveA:  pose({ cups: true, above: HEADPHONES, legs: stepFront(), float: [[2, NOTE]] }),
+  grooveB:  pose({ cups: true, eyes: EYES_C, above: HEADPHONES, legs: stepBack(), float: [[2, NOTE2]] }),
 
-  /* carrying: the box rides above him */
-  carryA:    A(A(stand([LEGS, LEGS, LEGS], EYES_T, BROW_T, ARMS_OUT), 1, BOX_TOP), 2, BOX_MID),
-  carryB:    A(A(stand([LEGS, LEGS, LEGS_FR], EYES_T, BROW_T, ARMS_OUT), 1, BOX_TOP), 2, BOX_MID)
+  /* the rest */
+  chefA:    pose({ above: CHEF_HAT }),
+  chefB:    pose({ above: CHEF_HAT, right: "out" }),
+  laughA:   pose({ brow: SMILE, left: "out", right: "out" }),
+  laughB:   pose({ brow: SMILE, left: "out", right: "out", legs: legsTight(3) }),
+  yawnA:    pose({ eyes: EYES_C, left: "out", right: "out" }),
+  yawnB:    pose({ eyes: EYES_C, raise: 3, raiseSides: "LR" }),
+  pointA:   pose({ eyes: EYES_RK, right: "out" }),
+  pointB:   pose({ eyes: EYES_RK, right: "out", legs: stepBack() }),
+  shrugA:   pose({ eyes: EYES_TALL, brow: EYES_TALL, left: "out", right: "out" }),
+  shrugB:   pose({ eyes: EYES_TALL, brow: EYES_TALL, left: "in", right: "in" }),
+  clapA:    pose({ brow: CARET, left: "out", right: "out" }),
+  clapB:    pose({ brow: CARET, left: "in", right: "in" }),
+  tipA:     pose({ eyes: EYES_LK, legs: [limb(5,2),limb(7,1),limb(9,2),limb(11,1)] }),
+  tipB:     pose({ eyes: EYES_RK, legs: [limb(5,1),limb(7,2),limb(9,1),limb(11,2)] }),
+  tapA:     pose({ eyes: EYES_C, legs: tapping() }),
+  tapB:     pose({ eyes: EYES_C }),
+  carryA:   pose({ eyes: EYES_TALL, brow: EYES_TALL, left: "out", right: "out", above: BOX }),
+  carryB:   pose({ eyes: EYES_TALL, brow: EYES_TALL, left: "out", right: "out", above: BOX,
+                   legs: stepFront() }),
+
+  /* ── the birthday ── */
+  partyA:   pose({ brow: SMILE, above: PARTY_HAT }),
+  partyB:   pose({ brow: SMILE, above: PARTY_HAT, raise: 2, raiseSides: "LR" }),
+  partyC:   pose({ brow: SMILE, above: PARTY_HAT, raise: 3, raiseSides: "LR", legs: legsTight(3) }),
+  cakeA:    pose({ brow: SMILE, above: PARTY_HAT, left: "out", right: "out" }),
+  cakeB:    pose({ eyes: EYES_C, brow: SMILE, above: PARTY_HAT, left: "out", right: "out" }),
+  blowA:    pose({ eyes: EYES_C, brow: SMILE, above: PARTY_HAT, left: "out", right: "out" }),
+  popA:     pose({ eyes: EYES_TALL, brow: EYES_TALL, above: PARTY_HAT, legs: legsTight(1) }),
+  popB:     pose({ brow: SMILE, above: PARTY_HAT, raise: 3, raiseSides: "LR", legs: legsTight(3) }),
+  popC:     pose({ brow: SMILE, above: PARTY_HAT, raise: 3, raiseSides: "LR" })
 };
+
+/* the desk needs its surface under him, which is not a leg */
+/* The desk: a surface under him, and a screen standing on it beside him — the
+   computer he is supposed to be working at. */
+function atDesk(frame) {
+  const f = frame.slice();
+  f[12] = DESK_TOP;
+  f[13] = DESK_FEET;
+  f[8]  = paint(f[8],  ["0", 14, 15]);            /* the top of the screen  */
+  f[9]  = paint(f[9],  ["0", 14, 14], ["s", 15, 15]);
+  f[10] = paint(f[10], ["0", 14, 14], ["s", 15, 15]);
+  f[11] = paint(f[11], ["0", 14, 15]);            /* its stand on the desk  */
+  return f;
+}
+F.deskA = atDesk(F.deskA);
+F.deskB = atDesk(F.deskB);
+void SCREEN_A; void SCREEN_B; void NUBS; void raiseRows;
 
 /* ---------- the animation library ---------- */
 
@@ -217,15 +328,15 @@ const DEFAULT_ANIMATIONS = {
   walk:  { name: "walk",  builtin: true, fps: 8,  loop: true,  bob: [0,0,0,0],
            frames: [F.stepA,F.idle,F.stepB,F.idle] },
   run:   { name: "run",   builtin: true, fps: 14, loop: true,  bob: [0,0,0,0],
-           frames: [F.stepA,F.stepC,F.stepB,F.stepC] },
+           frames: [F.stepC,F.stepA,F.stepD,F.stepB] },
   jump:  { name: "jump",  builtin: true, fps: 8,  loop: true,  bob: [0,0,0,0],
-           frames: [F.crouch,F.tall,F.tall,F.crouch] },
+           frames: [F.crouch,F.stretched,F.stretched,F.crouch] },
   sleep: { name: "sleep", builtin: true, fps: 1.5,loop: true,  bob: [0,0,0],
            frames: [F.sleepA,F.sleepB,F.sleepC] },
   wave:  { name: "wave",  builtin: true, fps: 6,  loop: true,  bob: [0,0,0,0],
            frames: [F.idle,F.waveA,F.waveB,F.waveA] },
-  work:  { name: "work",  builtin: true, fps: 7,  loop: true,  bob: [0,0,0,0],
-           frames: [F.reachR,F.idle,F.reachR,F.idle] },
+  work:  { name: "at the computer", builtin: true, fps: 5, loop: true, bob: [0,0,0,0],
+           frames: [F.deskA,F.deskB,F.deskA,F.deskB] },
   dance: { name: "dance", builtin: true, fps: 8,  loop: true,  bob: [0,0,0,0],
            frames: [F.stepA,F.reachR,F.stepB,F.reachL] },
   think: { name: "think", builtin: true, fps: 2,  loop: true,  bob: [0,0,0,0],
@@ -239,12 +350,11 @@ const DEFAULT_ANIMATIONS = {
   kick:  { name: "kick",  builtin: true, fps: 10, loop: false, bob: [0,0,0,0],
            frames: [F.stepB,F.kickA,F.kickB,F.idle] },
   flip:  { name: "hop",   builtin: true, fps: 11, loop: false, bob: [0,-3,-5,-2,0],
-           frames: [F.crouch,F.tucked,F.tall,F.crouch,F.idle] },
+           frames: [F.crouch,F.tucked,F.stretched,F.crouch,F.idle] },
   drink: { name: "drink", builtin: true, fps: 3,  loop: true,  bob: [0,0,0,0],
            frames: [F.idle,F.sip,F.sip,F.idle] },
   abed:  { name: "in bed",builtin: true, fps: 1.2,loop: true,  bob: [0,0,0,0],
            frames: [F.napA,F.napB,F.napA,F.napB] },
-
   desk:  { name: "at the desk", builtin: true, fps: 5, loop: true, bob: [0,0,0,0],
            frames: [F.deskA,F.deskB,F.deskA,F.deskB] },
   chill: { name: "chilling",    builtin: true, fps: 1.4, loop: true, bob: [0,0,0,0],
@@ -255,7 +365,7 @@ const DEFAULT_ANIMATIONS = {
            frames: [F.pageA,F.pageA,F.pageB] },
   stretch:{ name: "stretching", builtin: true, fps: 2.5, loop: true, bob: [0,0,0,0],
            frames: [F.idle,F.armsOut,F.armsOut,F.idle] },
-  cheer: { name: "celebrating", builtin: true, fps: 9, loop: true, bob: [0,0,0,0],
+  cheer: { name: "celebrating", builtin: true, fps: 9, loop: true, bob: [0,-2,0,-2],
            frames: [F.cheerA,F.cheerB,F.cheerA,F.cheerB] },
   peek:  { name: "looking round",builtin: true, fps: 1.6, loop: true, bob: [0,0,0,0],
            frames: [F.lookL,F.idle,F.lookR,F.idle] },
@@ -268,11 +378,10 @@ const DEFAULT_ANIMATIONS = {
   nap:   { name: "dozing",      builtin: true, fps: 1.2, loop: true, bob: [0,0],
            frames: [F.napA,F.napB] },
   happy: { name: "pleased",     builtin: true, fps: 2, loop: true, bob: [0,0,0,0],
-           frames: [F.pleased,F.pleased,F.idle,F.pleased] },
-
+           frames: [F.pleased,F.smiling,F.idle,F.smiling] },
   chef:  { name: "cooking",     builtin: true, fps: 4, loop: true, bob: [0,0,0,0],
            frames: [F.chefA,F.chefB,F.chefA,F.chefB] },
-  laugh: { name: "laughing",    builtin: true, fps: 7, loop: true, bob: [0,0,0,0],
+  laugh: { name: "laughing",    builtin: true, fps: 7, loop: true, bob: [0,-1,0,-1],
            frames: [F.laughA,F.laughB,F.laughA,F.laughB] },
   yawn:  { name: "yawning",     builtin: true, fps: 1.6, loop: true, bob: [0,0,0,0],
            frames: [F.idle,F.yawnA,F.yawnB,F.yawnA] },
@@ -285,7 +394,17 @@ const DEFAULT_ANIMATIONS = {
   tiptoe:{ name: "creeping",    builtin: true, fps: 5, loop: true, bob: [0,0,0,0],
            frames: [F.tipA,F.tipB,F.tipA,F.tipB] },
   tap:   { name: "waiting",     builtin: true, fps: 4, loop: true, bob: [0,0,0,0],
-           frames: [F.tapA,F.tapB,F.tapA,F.tapB] }
+           frames: [F.tapA,F.tapB,F.tapA,F.tapB] },
+
+  /* ── only on a birthday ── */
+  party: { name: "partying",    builtin: true, fps: 6, loop: true, bob: [0,-1,-2,-1],
+           birthday: true, frames: [F.partyA,F.partyB,F.partyC,F.partyB] },
+  cake:  { name: "holding the cake", builtin: true, fps: 2, loop: true, bob: [0,0,0,0],
+           birthday: true, frames: [F.cakeA,F.cakeA,F.cakeB,F.cakeA] },
+  blow:  { name: "blowing out the candles", builtin: true, fps: 3, loop: true, bob: [0,0,0,0],
+           birthday: true, frames: [F.cakeA,F.blowA,F.blowA,F.cakeA] },
+  present:{ name: "out of the present", builtin: true, fps: 2.5, loop: false, bob: [0,0,0,0,0,0],
+           birthday: true, frames: [F.popA,F.popA,F.popB,F.popC,F.popB,F.popC] }
 };
 
 /* Animations he may pick on his own when he has nothing better to do. */
@@ -294,6 +413,43 @@ const DEFAULT_ROTATION = ["wave", "dance", "work", "think", "jump", "desk", "chi
 
 /* Actions the engine needs and must never lose. */
 const REQUIRED = ["idle", "walk", "run", "sleep", "held", "fall", "land"];
+
+/* ---------- who this one belongs to ----------
+   The only thing that differs between a copy made as a gift and the plain one. */
+
+const PERSON = {
+  name: "",                                  /* whose buddy this is, if anyone */
+  hello: ["hello", "hey", "hi", "there you are"],
+  phrases: null,                             /* null = the general ones        */
+  checkIns: null                             /* null = the general ones        */
+};
+
+/* "how's it going?" becomes "how ya doing, Eleanor?" when this copy has an owner. */
+function addressed(line) {
+  const who = PERSON.name;
+  if (!who) return line;
+  return line.replace(/\?$/, ", " + who.toLowerCase() + "?");
+}
+
+/* ---------- birthdays ---------- */
+
+function birthdayToday(birthdays, when) {
+  const d = when || new Date();
+  const key = String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  return (birthdays || []).find(b => b && b.date === key) || null;
+}
+
+function daysUntil(dateKey, when) {
+  const d = when || new Date();
+  const [m, day] = String(dateKey || "").split("-").map(Number);
+  if (!m || !day) return null;
+  let next = new Date(d.getFullYear(), m - 1, day);
+  if (next < new Date(d.getFullYear(), d.getMonth(), d.getDate())) next = new Date(d.getFullYear() + 1, m - 1, day);
+  return Math.round((next - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 86400000);
+}
+
+/* What he does on someone's birthday, instead of the usual pool for the hour. */
+const BIRTHDAY_POOL = { party: 4, cake: 3, blow: 2, clap: 2, cheer: 2, laugh: 2, happy: 2, dance: 2, present: 1 };
 
 /* ---------- his day ----------
    Left to dice rolls he does the same six things forever and the rest of the
@@ -437,6 +593,30 @@ const PROPS = {
     ["kkkkkkkkkkkkkkkk", "k.d...d...d...dk", "k...d...d...d..k", "k.d...d...d...dk",
      "k...d...d...d..k", "k.d...d...d...dk", "k..............k"]
   ]},
+  /* a cake, with a candle he can blow out */
+  /* Outlined, because white icing on a white wallpaper is an invisible cake. */
+  cake: { size: 8, frames: [
+    ["...y....", "...k....", ".mmmmmm.", "kmmmmmmk", "kcccccck", "kkkkkkkk"],
+    ["...y....", "...k....", ".mmmmmm.", "kmmmmmmk", "kcccccck", "kkkkkkkk"],
+    ["........", "...k....", ".mmmmmm.", "kmmmmmmk", "kcccccck", "kkkkkkkk"]
+  ]},
+  /* the present he comes out of: lid on, lid off */
+  present: { size: 10, frames: [
+    ["....kk....", "..kkkkkk..", "rrrrkkrrrr", "rrrrkkrrrr", "rrrrkkrrrr", "rrrrkkrrrr", "rrrrkkrrrr"],
+    ["..k....k..", "..........", "rrrrkkrrrr", "rrrrkkrrrr", "rrrrkkrrrr", "rrrrkkrrrr", "rrrrkkrrrr"],
+    ["..........", "..........", "..........", "rrrrkkrrrr", "rrrrkkrrrr", "rrrrkkrrrr", "rrrrkkrrrr"]
+  ]},
+  /* the paper hat he wears all day on a birthday, whatever else he is doing */
+  hat: { size: 5, frames: [ ["..w..", "..r..", ".rrr.", "rrrrr"] ] },
+  balloon: { size: 6, frames: [
+    ["..rr..", ".rrrr.", ".rrrr.", "..rr..", "...k..", "..k...", "...k..", "......"],
+    ["..rr..", ".rrrr.", ".rrrr.", "..rr..", "..k...", "...k..", "..k...", "......"]
+  ]},
+  confetti: { size: 8, frames: [
+    ["..r...g.", ".y...r..", "....y...", "..g.....", "........", "........", "........", "........"],
+    [".g..y...", "...r....", ".y....g.", "....r...", "........", "........", "........", "........"]
+  ]},
+
   /* carried folded, then unrolled */
   bed: { size: 16, frames: [
     ["................", "................", "......kffk......", "......kffk......"],
@@ -569,7 +749,13 @@ function resolveColors(colors) {
 }
 function paletteFor(colors) {
   const c = resolveColors(colors);
-  return { "1": c.body, "2": c.shade, "3": c.light, "0": c.dark, "w": c.white };
+  return {
+    "1": c.body, "2": c.shade, "3": c.light, "0": c.dark, "w": c.white,
+    /* things he holds, which are not made of him: coffee, a lit screen, a candle
+       flame, a ribbon. Without these the cells render as nothing at all, which is
+       how his coffee was invisible for a fortnight. */
+    "c": "#5a3a24", "s": "#9ed4cb", "y": "#e8c15a", "r": "#d0574c"
+  };
 }
 
 /* ---------- drawing ---------- */
@@ -715,6 +901,9 @@ const DEFAULT_STATE = {
     seeTime: true
   },
   stats: { bestKeepies: 0, goals: 0, goalsDate: "", gifts: 0, happiness: 0.5, meals: {} },
+
+  /* Whose birthdays he knows. MM-DD, because the year is nobody's business. */
+  birthdays: [],
   rotation: DEFAULT_ROTATION.slice(),
   animations: {}          /* overrides of built-ins + custom animations    */
 };
@@ -738,6 +927,7 @@ function mergeState(saved) {
       : Array.from(new Set(saved.rotation.concat(DEFAULT_ROTATION)));
   }
   if (Array.isArray(saved.reactions)) s.reactions = saved.reactions.slice(0, 40);
+  if (Array.isArray(saved.birthdays)) s.birthdays = saved.birthdays.slice(0, 40);
   Object.assign(s.awareness, saved.awareness || {});
   Object.assign(s.stats, saved.stats || {});
   s.animations = {};
@@ -775,7 +965,8 @@ if (typeof window !== "undefined") {
   window.CB = {
     GRID, F, DEFAULT_ANIMATIONS, DEFAULT_ROTATION, DEFAULT_COLORS, DEFAULT_STATE, REQUIRED,
     FOOT_ROW, SPRITE_VERSION, PROPS, PROP_PALETTE, drawProp, topRowOf,
-    DAY_PHASES, MEAL_ROUTINE, ENGINE_ANIMATIONS, phaseAt, pickFromPool, drawBall, BALL_COLORS, normalizeAnim, normalizeFrame, blankFrame, drawFrame, drawShadow, drawStanding,
+    DAY_PHASES, MEAL_ROUTINE, ENGINE_ANIMATIONS, phaseAt, pickFromPool,
+    PERSON, BIRTHDAY_POOL, birthdayToday, daysUntil, addressed, drawBall, BALL_COLORS, normalizeAnim, normalizeFrame, blankFrame, drawFrame, drawShadow, drawStanding,
     paletteFor, resolveColors, mergeState, animationsOf, mix, hexToRgb, rgbToHex
   };
 }

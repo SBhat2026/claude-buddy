@@ -12,10 +12,13 @@ const win = {};
 new Function("window", fs.readFileSync(path.join(__dirname, "..", "Resources", "common.js"), "utf8"))(win);
 const CB = win.CB;
 const A = CB.DEFAULT_ANIMATIONS;
+const PALETTE = CB.paletteFor(null);
 
 /* Animations that are allowed to change his height, because folding his legs is
    how sitting, sleeping and crouching work. */
-const FOLDS = ["jump", "land", "flip", "sleep", "abed", "nap", "chill", "sit", "desk"];
+/* Animations where his height is allowed to change, because folding his legs —
+   or climbing out of a present — is the point of them. */
+const FOLDS = ["jump", "land", "flip", "sleep", "abed", "nap", "chill", "sit", "desk", "work", "present"];
 
 const BODY_LEFT = [1, 2, 3];       /* body rows start at 3, arm rows at 2, reaches at 1 */
 const BODY_RIGHT = [13, 14, 15];
@@ -49,7 +52,9 @@ for (const [key, anim] of Object.entries(A)) {
     if (frame.length !== 16) fail(where, "is not 16 rows");
     frame.forEach((row, y) => {
       if (typeof row !== "string" || row.length !== 16) return fail(where, "row", y, "is not 16 wide");
-      if (/[^.0123wcs]/.test(row)) fail(where, "row", y, "uses an unknown colour:", row);
+      /* the allowed colours are whatever the palette can actually draw — hardcoding
+         them here is how 'c' and 's' shipped as invisible cells */
+      for (const ch of row) if (ch !== "." && !PALETTE[ch]) fail(where, "row", y, `uses '${ch}', which the palette cannot draw`);
 
       /* Any row wide enough to be part of his body must be HIS body: same left and
          right edges, every time. This is the rule that keeps one model. */
@@ -83,6 +88,7 @@ for (const [key, anim] of Object.entries(A)) {
 const inPools = new Set();
 for (const phase of CB.DAY_PHASES) for (const k of Object.keys(phase.pool || {})) inPools.add(k);
 for (const step of CB.MEAL_ROUTINE) inPools.add(step.anim);
+for (const k of Object.keys(CB.BIRTHDAY_POOL)) inPools.add(k);
 const byEngine = new Set(Object.keys(CB.ENGINE_ANIMATIONS));
 const inReactions = new Set(CB.DEFAULT_STATE.reactions.map(r => r.do));
 

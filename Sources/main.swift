@@ -124,7 +124,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             Timer.scheduledTimer(withTimeInterval: 8.4, repeats: false) { [weak self] _ in
                 self?.command(["cmd": "say", "text": "watch this"])
             }
-            Timer.scheduledTimer(withTimeInterval: 9, repeats: false) { [weak self] _ in self?.snapshot(to: path) }
+            let at = Double(ProcessInfo.processInfo.environment["CBSNAPAT"] ?? "") ?? 9
+            Timer.scheduledTimer(withTimeInterval: at, repeats: false) { [weak self] _ in self?.snapshot(to: path) }
         }
     }
 

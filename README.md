@@ -149,15 +149,34 @@ stretched, not leaned, not tipped over. Three things move, and only these three:
 | **the legs** | the three rows beneath the body |
 | **the arms** | the nubs at the sides, and cells beyond them |
 
-All thirty-six animations are combinations of those. A step shortens one pair of
+All forty animations are combinations of those. A step shortens one pair of
 legs by a row — never by half, which is what made him look like he was squatting as
 he walked — and because every standing frame carries exactly three rows of leg, the
 head lands on the same row in all of them and cannot bob or compress.
+
+**Birthdays.** He keeps a list of them (Studio → Birthdays, month and day only). On
+the day he notices once, comes out of a present to say it, wears a paper hat from
+then until midnight whatever else he is doing, brings out a cake, blows the candle
+out, throws confetti and applauds. The hour's usual schedule is set aside. He also
+mentions one that is coming up within a fortnight.
+
+**Making one as a gift.** `PERSON` at the top of `common.js` is the only thing that
+differs between a plain copy and one made for somebody: a name, how he greets them,
+what he says, and how he checks in. Set it, put their birthday in the default state,
+and build with `APP_NAME="Buddy for …" BUNDLE_ID=… ./build.sh`.
 
 **`tools/check.js` enforces that there is one model, and the build runs it.** Any row
 wide enough to be part of his body must *be* his body — same left and right edge,
 every time — and every frame must contain the canonical body row, must have eyes, and
 must not move his head within an animation that is not folding his legs.
+
+`tools/audit.js` goes further and looks at the pixels: it floods out from his body
+and fails anything not joined to him, and checks every colour used is one the palette
+can actually draw. Both found things on this pass — legs that appeared as loose
+pixels under him when a step splayed them, a hand that floated free of the arm below
+it, a musical note that was landing on the top of his head and rubbing it out, and
+his coffee and his screen, which were drawn in two colours the palette did not have
+and so had been invisible the whole time.
 
 It has caught real things: three poses were rendering him eyeless, because the row a
 raised arm lives on is the row his eyes are on. And the menu-bar icon used to be a

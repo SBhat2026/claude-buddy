@@ -290,7 +290,7 @@ function say(text, seconds) {
   say._t = setTimeout(() => bubbleEl.classList.remove("on"), (seconds || 2.8) * 1000);
 }
 function randomPhrase() {
-  const p = state.behavior.phrases || [];
+  const p = (window.CB.PERSON && window.CB.PERSON.phrases) || state.behavior.phrases || [];
   return p.length ? p[(Math.random() * p.length) | 0] : null;
 }
 function walkTo(x, run) {
@@ -483,6 +483,52 @@ function doScheduled(key) {
   return true;
 }
 
+
+/* ---------- birthdays ----------
+   One day a year he wears a paper hat from the moment he wakes up, brings out a
+   cake, and is no use for anything else. */
+
+const party = { greeted: "", confettiAt: 0 };
+
+function whoseBirthday() { return window.CB.birthdayToday(state.birthdays); }
+
+function birthdayGreeting(who) {
+  const name = who.name || (window.CB.PERSON && window.CB.PERSON.name) || "you";
+  return "happy birthday, " + name + "!";
+}
+
+function confetti(x, y, n) {
+  for (let i = 0; i < (n || 6); i++) {
+    effects.push({ name: "confetti", x: x + (Math.random() * 70 - 35), y: y - Math.random() * 30,
+                   vy: -30 - Math.random() * 40, vx: (Math.random() * 2 - 1) * 40,
+                   life: 1.4 + Math.random(), t: 0, scale: Math.max(2, scale() * 0.5) });
+  }
+}
+
+/* The moment he notices, once a day. */
+function checkBirthday() {
+  const who = whoseBirthday();
+  if (!who) return;
+  const stamp = todayKey() + ":" + who.name;
+  if (party.greeted === stamp) return;
+  party.greeted = stamp;
+  setAction("present", 5);
+  say(birthdayGreeting(who), 7);
+  confetti(pet.x, pet.y - 40, 10);
+  setTimeout(() => { if (!pet.dragging) { setAction("cake", 8); confetti(pet.x, pet.y - 40, 8); } }, 5200);
+}
+
+/* Anything soon, so he can mention it. */
+function birthdaySoon() {
+  let best = null;
+  for (const b of (state.birthdays || [])) {
+    const days = window.CB.daysUntil(b.date);
+    if (days == null || days > 14 || days === 0) continue;
+    if (!best || days < best.days) best = { name: b.name, days: days };
+  }
+  return best;
+}
+
 /* ---------- deciding what to do ---------- */
 function nightHour() {
   const h = new Date().getHours();
@@ -538,6 +584,17 @@ function decide() {
     if (r0 < 0.32) {
       const p = pickPlatform();
       if (p) { hopTo(p); return; }
+    }
+  }
+
+  /* a birthday takes over the whole day */
+  const who = whoseBirthday();
+  if (who && !busy() && onFloor() && Math.random() < 0.8) {
+    const pick = window.CB.pickFromPool(window.CB.BIRTHDAY_POOL, k => !!anims[k]);
+    if (pick && doScheduled(pick)) {
+      if (Math.random() < 0.35) say(["happy birthday!", birthdayGreeting(who), "cake?", "many happy returns"][(Math.random() * 4) | 0], 4);
+      if (pick === "party" || pick === "cheer") confetti(pet.x, pet.y - 40, 6);
+      return;
     }
   }
 
@@ -599,6 +656,14 @@ function command(cmd, msg) {
     if (p) hopTo(p); else say("nothing to jump onto", 2.5);
   }
   else if (cmd === "checkin") { checkin.last = 0; maybeCheckIn(); }
+  else if (cmd === "birthday") {
+    const who = whoseBirthday() || { name: state.name };
+    party.greeted = "";
+    setAction("present", 5);
+    say(birthdayGreeting(who), 7);
+    confetti(pet.x, pet.y - 40, 12);
+    setTimeout(() => { if (!pet.dragging) { setAction("cake", 8); confetti(pet.x, pet.y - 40, 8); } }, 5200);
+  }
   else if (cmd === "center") { pet.x = screenRect.x + screenRect.w / 2; pet.y = ground(); setAction("land", 0.4); }
   else if (cmd === "jump") { pet.vy = -520; pet.y -= 1; setAction("fall", 4); }
 }
@@ -760,7 +825,7 @@ const talk = { open: false, pending: null, seq: 0, history: [], closeAt: 0, last
 const SHRUGS = ["hm", "no idea, but ok", "if you say so", "sure", "go on then",
                 "i was thinking that too", "probably", "one sec… no, gone",
                 "you'd know better", "mm"];
-const GREETINGS = ["hello", "hey", "hi", "there you are"];
+const GREETINGS = (window.CB.PERSON && window.CB.PERSON.hello) || ["hello", "hey", "hi", "there you are"];
 
 function fallbackReply(text) {
   const t = String(text || "").toLowerCase();
@@ -1002,9 +1067,10 @@ const checkin = { last: Date.now() / 1000 };
    that lands four times in ten minutes is not a check-in. */
 function checkInLine() {
   const app = (aware.context && aware.context.app) || "";
-  const lines = ["how's it going?", "any progress?", "how are we doing?",
-                 app ? "still in " + app + "?" : "what are we on?", "need anything?"];
-  return lines[(Math.random() * lines.length) | 0];
+  const own = (window.CB.PERSON && window.CB.PERSON.checkIns) || null;
+  const lines = own || ["how's it going?", "any progress?", "how are we doing?",
+                        app ? "still in " + app + "?" : "what are we on?", "need anything?"];
+  return window.CB.addressed(lines[(Math.random() * lines.length) | 0]);
 }
 
 function maybeCheckIn() {
@@ -1015,6 +1081,13 @@ function maybeCheckIn() {
   if (now - checkin.last < gap) return false;
   if (pet.asleep || pet.dragging || talk.open) return false;
   checkin.last = now;
+
+  const soon = birthdaySoon();
+  if (soon && Math.random() < 0.4) {
+    say(soon.name + "'s birthday in " + soon.days + (soon.days === 1 ? " day" : " days"), 6);
+    setAction("think", 3);
+    return true;
+  }
 
   const a = state.awareness || {};
   if (a.enabled && a.model) {
@@ -1148,6 +1221,7 @@ function tick(now) {
 function update(dt) {
   const b = state.behavior;
   const g = ground();
+  if (!pet.dragging && !talk.open) checkBirthday();
 
   updateBall(dt);
   updateEffects(dt);
@@ -1356,6 +1430,29 @@ function render() {
     flip: pet.facing < 0, bob: a.bob[f] || 0, alpha: state.look.opacity == null ? 1 : state.look.opacity
   });
 
+  /* a birthday: the hat stays on whatever he is doing, and the cake comes out */
+  const bday = whoseBirthday();
+  const wearsHatAlready = ["party", "cake", "blow", "present", "chef"].indexOf(pet.action) >= 0;
+  if (bday && !pet.dragging) {
+    const topRow = CBx.topRowOf(a.frames[f]);
+    const headY = BASE_Y + (CBx.GRID - CBx.FOOT_ROW) * s - (CBx.GRID - topRow) * s;
+    if (!wearsHatAlready) {
+      CBx.drawProp(ctx, "hat", 0, { cx: CX, baseY: headY + 1, scale: Math.max(2, s) });
+    }
+    if (pet.action === "cake" || pet.action === "blow") {
+      const lit = pet.action === "blow" && (pet.frame === 1 || pet.frame === 2) ? 2 : 0;
+      /* held out in front of him, at the height his hands are */
+      CBx.drawProp(ctx, "cake", lit, {
+        cx: CX + pet.facing * s * 8, baseY: BASE_Y - s * 3, scale: Math.max(2, s * 0.9)
+      });
+    }
+    if (pet.action === "present" && pet.frame < 3) {
+      CBx.drawProp(ctx, "present", Math.min(pet.frame, 2), {
+        cx: CX, baseY: BASE_Y + 1, scale: Math.max(2, s * 1.05)
+      });
+    }
+  }
+
   /* the drone, above everything */
   if (drone) {
     CBx.drawProp(ctx, "drone", Math.floor(drone.t * 20), {
@@ -1385,7 +1482,9 @@ function place() {
   const a0 = anims[pet.action] || anims.idle;
   const f0 = a0.frames[Math.min(pet.frame, a0.frames.length - 1)];
   const top = BASE_Y + (window.CB.GRID - window.CB.FOOT_ROW) * s - (window.CB.GRID - window.CB.topRowOf(f0)) * s;
-  const wantBottom = Math.round(WIN_H - top + 6);
+  const hatRoom = (whoseBirthday() && ["party", "cake", "blow", "present", "chef"].indexOf(pet.action) < 0)
+    ? 4 * s : 0;
+  const wantBottom = Math.round(WIN_H - top + 6 + hatRoom);
   if (wantBottom !== bubbleBottom) {
     bubbleBottom = wantBottom;
     bubbleEl.style.bottom = wantBottom + "px";
