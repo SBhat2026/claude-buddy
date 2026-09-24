@@ -112,9 +112,13 @@ const tapping   = () => [limb(4, 3), limb(6, 3), limb(10, 3), limb(12, 2)];
 /* ── arms ──
    The nub row is the shoulder. An arm reaching goes further along that row; an arm
    raised is a column climbing from the shoulder, so the hand is never adrift. */
+/* His shoulders are 13 wide and stay 13 wide. An arm reaches further out or comes
+   back to rest; it never retracts into him, because a body that changes width
+   between frames reads as two different creatures — which is exactly what
+   "arms: in" was doing to him every time he applauded. */
 function armsRow(left, right) {
-  return R(["1", left === "out" ? ARM_L - 1 : left === "in" ? BODY_L : ARM_L,
-            right === "out" ? ARM_R + 1 : right === "in" ? BODY_R : ARM_R]);
+  return R(["1", left === "out" ? ARM_L - 1 : ARM_L,
+            right === "out" ? ARM_R + 1 : ARM_R]);
 }
 function raiseRows(height, sides) {
   /* returns [rowsAboveShoulder] top-down, each a single cell per raised side */
@@ -142,13 +146,7 @@ function pose(opts) {
   const raise = o.raise || 0;
   if (raise > 0) {
     const sides = o.raiseSides || "R";
-    /* the nub goes with it — an arm that is up is not also out to the side, and
-       without this the raised arm is a single cell against a thirteen-wide body
-       and reads as nothing at all */
-    const nubL = sides.indexOf("L") >= 0 ? BODY_L : ARM_L;
-    const nubR = sides.indexOf("R") >= 0 ? BODY_R : ARM_R;
-    body[5] = R(["1", nubL, nubR]);
-    body[6] = R(["1", nubL, nubR]);
+    /* The arm climbs FROM the shoulder, which stays where it is. */
     for (let i = 1; i <= Math.min(raise, 5); i++) {
       const row = 5 - i;                     /* 5 is the first nub row        */
       if (row < 0) break;
@@ -310,10 +308,11 @@ function atDesk(frame) {
   const f = frame.slice();
   f[12] = DESK_TOP;
   f[13] = DESK_FEET;
-  f[8]  = paint(f[8],  ["0", 14, 15]);            /* the top of the screen  */
-  f[9]  = paint(f[9],  ["0", 14, 14], ["s", 15, 15]);
-  f[10] = paint(f[10], ["0", 14, 14], ["s", 15, 15]);
-  f[11] = paint(f[11], ["0", 14, 15]);            /* its stand on the desk  */
+  /* A screen standing on the desk in FRONT of him — he is behind it, which is
+     what sitting at a computer looks like. */
+  f[9]  = paint(f[9],  ["0", 9, 13]);
+  f[10] = paint(f[10], ["0", 9, 9], ["s", 10, 12], ["0", 13, 13]);
+  f[11] = paint(f[11], ["0", 9, 13]);
   return f;
 }
 F.deskA = atDesk(F.deskA);

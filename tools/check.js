@@ -66,6 +66,13 @@ for (const [key, anim] of Object.entries(A)) {
       }
     });
 
+    /* His shoulders never narrow. An arm may reach further out or lift, but it may
+       not retract into him: a body that changes width between frames reads as two
+       different creatures, which is what "arms in" did to him. */
+    const shoulder = frame.filter(r => /1{13,}/.test(r.replace(/[02]/g, "1")));
+    const anyBody = frame.some(r => /1{9,}/.test(r.replace(/[02]/g, "1")));
+    if (anyBody && !shoulder.length) fail(where, "has no shoulder row 13 wide — his arms have retracted into him");
+
     /* He must have a face. A raised arm lives on the eye row, and overwriting it
        has blinded him three times now. */
     const hasEyes = frame.some(r => /1/.test(r) && (r.match(/[02]/g) || []).length >= 2);

@@ -69,11 +69,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         return URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("Resources")
     }
 
+    /// Where this copy keeps its settings.
+    ///
+    /// Keyed by the app's own name rather than a fixed folder, because a copy made
+    /// as a gift is a different creature with a different owner and a different
+    /// birthday list — and when both wrote to one file, hers turned up on his
+    /// machine. The original migrates its old shared folder across once so nothing
+    /// is lost; a copy starts empty, which is the point of it.
     var stateURL: URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("ClaudeBuddy", isDirectory: true)
-        try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
-        return base.appendingPathComponent("state.json")
+        let fm = FileManager.default
+        let base = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let name = (Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String) ?? "ClaudeBuddy"
+        let dir = base.appendingPathComponent(name, isDirectory: true)
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("state.json")
+
+        let isOriginal = Bundle.main.bundleIdentifier == "com.siddhantbhat.claudebuddy"
+        let legacy = base.appendingPathComponent("ClaudeBuddy", isDirectory: true)
+            .appendingPathComponent("state.json")
+        if isOriginal, !fm.fileExists(atPath: url.path), fm.fileExists(atPath: legacy.path),
+           legacy.path != url.path {
+            try? fm.copyItem(at: legacy, to: url)
+        }
+        return url
     }
 
     // MARK: - lifecycle
