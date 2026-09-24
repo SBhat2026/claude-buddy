@@ -402,8 +402,10 @@ const DEFAULT_ANIMATIONS = {
            birthday: true, frames: [F.cakeA,F.cakeA,F.cakeB,F.cakeA] },
   blow:  { name: "blowing out the candles", builtin: true, fps: 3, loop: true, bob: [0,0,0,0],
            birthday: true, frames: [F.cakeA,F.blowA,F.blowA,F.cakeA] },
-  present:{ name: "out of the present", builtin: true, fps: 2.5, loop: false, bob: [0,0,0,0,0,0],
-           birthday: true, frames: [F.popA,F.popA,F.popB,F.popC,F.popB,F.popC] }
+  /* Slow on purpose: the box has to be a box for a moment before he is out of it. */
+  present:{ name: "out of the present", builtin: true, fps: 2, loop: false,
+           bob: [0,0,0,-1,0,0,0,0],
+           birthday: true, frames: [F.popA,F.popA,F.popA,F.popB,F.popC,F.popB,F.popC,F.popC] }
 };
 
 /* Animations he may pick on his own when he has nothing better to do. */
@@ -420,7 +422,8 @@ const PERSON = {
   name: "",                                  /* whose buddy this is, if anyone */
   hello: ["hello", "hey", "hi", "there you are"],
   phrases: null,                             /* null = the general ones        */
-  checkIns: null                             /* null = the general ones        */
+  checkIns: null,                            /* null = the general ones        */
+  entrance: null                             /* "present" = arrive out of one  */
 };
 
 /* "how's it going?" becomes "how ya doing, Eleanor?" when this copy has an owner. */
@@ -844,7 +847,7 @@ function drawStanding(ctx, frame, o) {
 
 /* ---------- state ---------- */
 
-const SPRITE_VERSION = 4;
+const SPRITE_VERSION = 5;
 
 const DEFAULT_STATE = {
   version: SPRITE_VERSION,
@@ -899,7 +902,7 @@ const DEFAULT_STATE = {
     seeIdle: true,
     seeTime: true
   },
-  stats: { bestKeepies: 0, goals: 0, goalsDate: "", gifts: 0, happiness: 0.5, meals: {} },
+  stats: { bestKeepies: 0, goals: 0, goalsDate: "", gifts: 0, happiness: 0.5, meals: {}, opened: 0 },
 
   /* Whose birthdays he knows. MM-DD, because the year is nobody's business. */
   birthdays: [],
@@ -931,8 +934,15 @@ function mergeState(saved) {
   Object.assign(s.stats, saved.stats || {});
   s.animations = {};
   const anims = saved.animations || {};
+  const stale = saved.version !== SPRITE_VERSION;
   for (const k of Object.keys(anims)) {
     if (!anims[k]) continue;
+    /* An edit to a built-in was made against the body he had at the time. When the
+       body changes, that edit is a drawing of a different creature — and because it
+       overrides the built-in, it is the one you see. One saved idle from an eleven-
+       wide era was still being drawn beside a thirteen-wide walk. Edits to built-ins
+       are dropped on a model change; anything you drew yourself is kept. */
+    if (stale && DEFAULT_ANIMATIONS[k]) continue;
     s.animations[k] = normalizeAnim(anims[k], k);
   }
   return s;

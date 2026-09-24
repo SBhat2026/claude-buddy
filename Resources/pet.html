@@ -134,6 +134,7 @@ function applyState(raw) {
   /* Something new appeared in his animation list, which can only mean you drew it. */
   const added = Object.keys(anims).filter(k => before.indexOf(k) < 0);
   if (hadState && added.length) celebrate(added[0]);
+  if (!hadState) setTimeout(arrival, 600);
   hadState = true;
 }
 
@@ -503,6 +504,25 @@ function confetti(x, y, n) {
                    vy: -30 - Math.random() * 40, vx: (Math.random() * 2 - 1) * 40,
                    life: 1.4 + Math.random(), t: 0, scale: Math.max(2, scale() * 0.5) });
   }
+}
+
+/* The first time this copy is ever opened, if it was made as a gift, he arrives out
+   of a present rather than dropping onto the floor like any other day. */
+function arrival() {
+  const wanted = (window.CB.PERSON && window.CB.PERSON.entrance) || null;
+  const opened = (state.stats && state.stats.opened) || 0;
+  state.stats.opened = opened + 1;
+  persist();
+  if (wanted !== "present" || opened > 0) return false;
+  pet.y = ground();
+  pet.vy = 0;
+  standOnFloor();
+  setAction("present", 6);
+  const who = whoseBirthday();
+  say(who ? birthdayGreeting(who) : ("hello, " + ((window.CB.PERSON && window.CB.PERSON.name) || "you")), 7);
+  confetti(pet.x, pet.y - 40, 12);
+  setTimeout(() => { if (!pet.dragging) { setAction("cake", 8); confetti(pet.x, pet.y - 40, 8); } }, 6200);
+  return true;
 }
 
 /* The moment he notices, once a day. */
@@ -1446,7 +1466,7 @@ function render() {
         cx: CX + pet.facing * s * 8, baseY: BASE_Y - s * 3, scale: Math.max(2, s * 0.9)
       });
     }
-    if (pet.action === "present" && pet.frame < 3) {
+    if (pet.action === "present" && pet.frame < 3) {   /* 1.5s of box before he is out */
       CBx.drawProp(ctx, "present", Math.min(pet.frame, 2), {
         cx: CX, baseY: BASE_Y + 1, scale: Math.max(2, s * 1.05)
       });
